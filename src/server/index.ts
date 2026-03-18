@@ -2,6 +2,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
+import { join } from "path";
 import { loadConfig } from "./config";
 import { getDb } from "./db/connection";
 import { startWatcher } from "./ingestion/watcher";
@@ -28,8 +29,13 @@ createSseRoute(app);
 
 // Serve SPA in production
 if (process.env.NODE_ENV === "production") {
-  app.use("/*", serveStatic({ root: "./dist/client" }));
-  app.get("*", serveStatic({ path: "./dist/client/index.html" }));
+  const clientRoot = join(process.cwd(), "dist/client");
+  app.use("/*", serveStatic({ root: clientRoot }));
+  // SPA fallback — all unmatched routes serve index.html for client-side routing
+  app.get("*", async (c) => {
+    const html = await Bun.file(join(clientRoot, "index.html")).text();
+    return c.html(html);
+  });
 }
 
 // Start file watcher

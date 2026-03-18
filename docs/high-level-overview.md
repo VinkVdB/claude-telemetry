@@ -66,8 +66,11 @@ Mounted volumes (read-only):
 
 ## Data Flow
 
-### Primary: Filesystem Watching (always active)
-1. **Watcher** monitors `~/.claude/projects/` for new/changed `.jsonl` files
+### Primary: Filesystem Watching (always active, cross-platform)
+1. **Watcher** monitors the configured Claude data directory for new/changed `.jsonl` files
+   - Uses **chokidar** for reliable cross-platform watching (Windows/Mac/Linux)
+   - Handles platform differences: NTFS vs HFS+ vs ext4 event semantics
+   - Polling fallback for Docker volume mounts where native fs events don't propagate (common on Windows/WSL)
 2. New lines are parsed, classified (assistant/user/progress/system), and stored in SQLite
 3. Assistant messages extract: model, tokens, tool calls, thinking, stop_reason
 4. User messages extract: prompts, tool results
@@ -235,8 +238,7 @@ otel_raw (
 ## Single Container, Single Port
 
 Everything runs in one Docker container:
-- Bun serves both the API and the built SPA on **port 3000**
-- OTEL receiver (optional) on **port 4317** (only if OTEL enrichment is desired)
+- Bun serves both the API, SPA, and optional OTEL receiver on **port 3000**
 - SQLite database stored in a Docker volume for persistence
 - `~/.claude/` subdirectories mounted as read-only volumes
 
@@ -246,20 +248,48 @@ services:
   claude-telemetry:
     build: .
     ports:
-      - "3000:3000"    # Dashboard + API
-      - "4317:4317"    # OTEL receiver (optional)
+      - "${CT_PORT:-3000}:3000"    # Dashboard + API
+      - "${CT_OTEL_PORT:-4317}:4317"    # OTEL receiver (optional)
     volumes:
-      - ~/.claude/projects:/data/projects:ro
-      - ~/.claude/sessions:/data/sessions:ro
-      - ~/.claude/teams:/data/teams:ro
-      - ~/.claude/tasks:/data/tasks:ro
+      - ${CLAUDE_HOME:-~/.claude}/projects:/data/projects:ro
+      - ${CLAUDE_HOME:-~/.claude}/sessions:/data/sessions:ro
+      - ${CLAUDE_HOME:-~/.claude}/teams:/data/teams:ro
+      - ${CLAUDE_HOME:-~/.claude}/tasks:/data/tasks:ro
       - telemetry-db:/data/db
     environment:
       - NODE_ENV=production
+      - CT_DATA_DIR=/data           # Internal mount point (fixed)
+      - CT_POLL_INTERVAL=${CT_POLL_INTERVAL:-1000}  # ms, for polling fallback
+      - CT_OTEL_ENABLED=${CT_OTEL_ENABLED:-false}
 
 volumes:
   telemetry-db:
 ```
+
+## Configuration
+
+All paths and behavior are configurable via environment variables with sensible defaults:
+
+| Variable | Default | Description |
+|---|---|---|
+| `CLAUDE_HOME` | `~/.claude` | Path to Claude data directory on host (for volume mounts) |
+| `CT_PORT` | `3000` | Dashboard port on host |
+| `CT_OTEL_PORT` | `4317` | OTEL receiver port on host |
+| `CT_OTEL_ENABLED` | `false` | Enable OTEL receiver |
+| `CT_POLL_INTERVAL` | `1000` | File polling interval in ms (fallback for platforms where native fs events don't work) |
+| `CT_WATCH_MODE` | `auto` | `auto` (try native, fallback to polling), `native`, or `poll` |
+
+### Platform Notes (File Watching)
+
+| Platform | Default behavior |
+|---|---|
+| **macOS** | Native FSEvents via chokidar — fast, reliable |
+| **Linux** | Native inotify via chokidar — fast, reliable |
+| **Windows (native Docker)** | Native ReadDirectoryChangesW — works with bind mounts |
+| **Windows (WSL2 + Docker Desktop)** | Polling fallback — WSL2 cross-filesystem events are unreliable |
+| **Docker Desktop (macOS/Windows)** | May need polling for bind-mounted volumes depending on Docker version |
+
+The `CT_WATCH_MODE=auto` default detects the platform and selects the best strategy. Users can force `poll` mode if they experience missed events.
 
 ---
 

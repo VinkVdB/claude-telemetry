@@ -5,10 +5,14 @@ import { formatTokens, formatCost, cn } from "../lib/utils";
 export function DetailPanel({ event, onClose }: { event: Event | null; onClose: () => void }) {
   if (!event) return null;
 
-  const content = event.content ? JSON.parse(event.content) : [];
+  let content: any[] = [];
+  try {
+    const parsed = event.content ? JSON.parse(event.content) : [];
+    content = Array.isArray(parsed) ? parsed : [];
+  } catch { content = []; }
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[480px] bg-white border-l border-border shadow-xl z-50 flex flex-col animate-in slide-in-from-right">
+    <div className="fixed inset-y-0 right-0 w-[480px] bg-white border-l border-border shadow-xl z-50 flex flex-col" style={{ animation: "slideIn 0.2s ease-out" }}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h3 className="font-semibold text-primary-dark">Event Detail</h3>
         <button onClick={onClose} className="text-muted hover:text-primary-dark text-xl">&times;</button>
@@ -62,7 +66,7 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
         <details>
           <summary className="text-xs text-muted cursor-pointer">Raw JSON</summary>
           <pre className="text-xs mt-2 bg-surface rounded-lg p-3 overflow-x-auto">
-            {event.raw ? JSON.stringify(JSON.parse(event.raw), null, 2) : "—"}
+            {event.raw ? (() => { try { return JSON.stringify(JSON.parse(event.raw), null, 2); } catch { return event.raw; } })() : "—"}
           </pre>
         </details>
       </div>

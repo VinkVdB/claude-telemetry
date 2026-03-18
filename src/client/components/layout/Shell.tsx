@@ -25,7 +25,7 @@ export function Shell() {
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1",
-                isActive ? "bg-primary/10 text-primary" : "text-muted hover:bg-surface hover:text-primary-dark"
+                isActive ? "bg-primary/10 text-primary" : "text-muted hover:bg-primary/5 hover:text-primary-dark"
               )
             }
           >

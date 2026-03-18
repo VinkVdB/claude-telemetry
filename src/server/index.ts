@@ -11,6 +11,7 @@ import { createSessionRoutes } from "./api/sessions";
 import { createEventRoutes } from "./api/events";
 import { createAgentRoutes } from "./api/agents";
 import { createSseRoute } from "./api/sse";
+import { createOtelRoutes } from "./otel/receiver";
 
 const config = loadConfig();
 const db = getDb(`${config.dataDir}/db/telemetry.db`);
@@ -26,6 +27,7 @@ createSessionRoutes(app, db);
 createEventRoutes(app, db);
 createAgentRoutes(app, db);
 createSseRoute(app);
+if (config.otelEnabled) createOtelRoutes(app, db);
 
 // Serve SPA — Bun.file with explicit CWD-relative path.
 // No NODE_ENV guard: bun build eliminates dead branches at build time when NODE_ENV is unset.

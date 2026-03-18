@@ -2,11 +2,13 @@
 import type { Database } from "bun:sqlite";
 import { parseJsonlLine, extractEventData } from "./parser";
 import { calculateCost } from "./pricing";
-import { upsertProject, upsertSession, insertEvent, updateSessionAggregates } from "../db/queries";
+import { upsertProject, upsertSession, insertEvent, updateSessionAggregates, upsertAgent } from "../db/queries";
 
 export function processJsonlLine(db: Database, rawLine: string, projectSlug: string): { eventId: string; sessionId: string; type: string } | null {
   const parsed = parseJsonlLine(rawLine);
   if (!parsed) return null;
+  // Skip events without a uuid — they can't be deduplicated and corrupt the primary key
+  if (!parsed.uuid) return null;
 
   const event = extractEventData(parsed);
 
@@ -56,6 +58,16 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
 
   // Update session aggregates
   updateSessionAggregates(db, event.sessionId);
+
+  // Register sidechain sessions as agents so AgentTimeline/Graph can show them
+  if (parsed.isSidechain) {
+    upsertAgent(db, {
+      id: event.sessionId, // use sessionId as agent ID for sidechain sessions
+      sessionId: event.sessionId,
+      agentType: (parsed as any).agentType ?? undefined,
+      startedAt: event.timestamp,
+    });
+  }
 
   return { eventId: event.id, sessionId: event.sessionId, type: event.type };
 }

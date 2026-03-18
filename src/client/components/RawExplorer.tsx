@@ -3,12 +3,11 @@ import { useState, useEffect } from "react";
 import { api } from "../lib/api";
 import { DetailPanel } from "./DetailPanel";
 import { formatTokens, formatCost, cn } from "../lib/utils";
-import type { Event, Project } from "../lib/types";
+import type { Event } from "../lib/types";
 
 export function RawExplorer() {
   const [events, setEvents] = useState<Event[]>([]);
   const [total, setTotal] = useState(0);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<Event | null>(null);
   const [filters, setFilters] = useState({
     sessionId: "",
@@ -19,10 +18,6 @@ export function RawExplorer() {
     offset: "0",
   });
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    api.projects.list().then(setProjects);
-  }, []);
 
   useEffect(() => {
     const params: Record<string, string> = {};

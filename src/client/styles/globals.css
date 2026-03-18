@@ -17,3 +17,8 @@ body {
   background: var(--color-bg);
   color: var(--color-primary-dark);
 }
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}

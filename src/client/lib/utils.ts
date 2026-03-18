@@ -18,7 +18,9 @@ export function formatDuration(ms: number): string {
 }
 
 export function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  // Normalize SQLite datetime('now') format "2026-03-18 21:23:31" → ISO with Z
+  const normalized = dateStr.includes("T") ? dateStr : dateStr.replace(" ", "T") + "Z";
+  const diff = Date.now() - new Date(normalized).getTime();
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;

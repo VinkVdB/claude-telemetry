@@ -7,7 +7,10 @@ export function upsertProject(db: Database, id: string, name: string, path: stri
   db.run(
     `INSERT INTO projects (id, name, path, last_active)
      VALUES (?, ?, ?, datetime('now'))
-     ON CONFLICT(id) DO UPDATE SET last_active = datetime('now')`,
+     ON CONFLICT(id) DO UPDATE SET
+       last_active = datetime('now'),
+       path = CASE WHEN excluded.path NOT LIKE '-%' THEN excluded.path ELSE projects.path END,
+       name = CASE WHEN excluded.path NOT LIKE '-%' THEN excluded.name ELSE projects.name END`,
     [id, name, path]
   );
 }

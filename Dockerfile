@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install deps
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --production=false
+RUN bun install --frozen-lockfile
 
 # Copy source
 COPY . .

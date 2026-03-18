@@ -16,7 +16,7 @@ export interface ParsedLine {
   message?: {
     model?: string;
     role?: string;
-    content?: ContentBlock[];
+    content?: ContentBlock[] | string;
     stop_reason?: string;
     usage?: {
       input_tokens?: number;
@@ -76,7 +76,9 @@ export function parseJsonlLine(line: string): ParsedLine | null {
 
 export function extractEventData(line: ParsedLine): ExtractedEvent {
   const usage = line.message?.usage;
-  const content = line.message?.content;
+  const rawContent = line.message?.content;
+  // content can be a string (user messages) or an array of ContentBlock (assistant messages)
+  const content: ContentBlock[] | undefined = Array.isArray(rawContent) ? rawContent : undefined;
 
   // Find first tool_use block for tool_name
   const toolUse = content?.find((b) => b.type === "tool_use");
@@ -87,7 +89,11 @@ export function extractEventData(line: ParsedLine): ExtractedEvent {
     parentId: line.parentUuid,
     type: line.type,
     timestamp: line.timestamp,
-    content: content ? JSON.stringify(content) : undefined,
+    content: rawContent
+      ? Array.isArray(rawContent)
+        ? JSON.stringify(rawContent)
+        : String(rawContent)
+      : undefined,
     isSidechain: line.isSidechain,
     agentId: line.agentId,
   };

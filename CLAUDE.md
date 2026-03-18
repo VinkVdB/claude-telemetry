@@ -76,3 +76,14 @@ Follow `docs/superpowers/plans/2026-03-18-claude-telemetry-dashboard.md` — 20 
 | `CT_POLL_INTERVAL` | `1000` | Polling interval in ms |
 | `CT_OTEL_ENABLED` | `false` | Enable OTEL HTTP receiver |
 | `CLAUDE_HOME` | `~/.claude` | Host path for Docker volume mounts |
+
+## Agent Strategy
+
+- Use agent teams liberally by using the `TeamCreate` tool
+- Use agent team members to solve tasks, give one agent one task to solve ()
+- Always look for opportunities to run work in parallel on multiple agents at once
+- Evaluate what model would be best suited for the task. Executive tasks should use Sonnet, complex tasks should use Opus
+
+## User Interaction
+
+- Ask the user questions with the `askUserQuestion` tool whenever additional requirements would improve the quality of the implementation.

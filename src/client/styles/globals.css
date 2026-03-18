@@ -1,0 +1,19 @@
+/* src/client/styles/globals.css */
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #00a2e0;
+  --color-primary-dark: #003864;
+  --color-accent: #bdd72d;
+  --color-bg: #ffffff;
+  --color-surface: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-muted: #64748b;
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-primary-dark);
+}

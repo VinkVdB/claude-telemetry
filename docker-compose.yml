@@ -1,0 +1,23 @@
+# docker-compose.yml
+services:
+  claude-telemetry:
+    build: .
+    ports:
+      - "${CT_PORT:-3000}:3000"
+      # OTEL receiver shares port 3000 — no separate port needed
+    volumes:
+      - ${CLAUDE_HOME:-~/.claude}/projects:/data/projects:ro
+      - ${CLAUDE_HOME:-~/.claude}/sessions:/data/sessions:ro
+      - ${CLAUDE_HOME:-~/.claude}/teams:/data/teams:ro
+      - ${CLAUDE_HOME:-~/.claude}/tasks:/data/tasks:ro
+      - telemetry-db:/data/db
+    environment:
+      - NODE_ENV=production
+      - CT_DATA_DIR=/data
+      - CT_WATCH_MODE=${CT_WATCH_MODE:-poll}
+      - CT_POLL_INTERVAL=${CT_POLL_INTERVAL:-1000}
+      - CT_OTEL_ENABLED=${CT_OTEL_ENABLED:-false}
+    restart: unless-stopped
+
+volumes:
+  telemetry-db:

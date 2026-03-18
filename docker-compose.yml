@@ -3,7 +3,7 @@ services:
   claude-telemetry:
     build: .
     ports:
-      - "${CT_PORT:-3000}:3000"
+      - "${CT_PORT:-4242}:3000"
       # OTEL receiver shares port 3000 — no separate port needed
     volumes:
       - ${CLAUDE_HOME:-~/.claude}/projects:/data/projects:ro

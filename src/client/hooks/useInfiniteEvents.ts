@@ -36,7 +36,7 @@ export interface UseInfiniteEventsResult {
 export function useInfiniteEvents(
   options: UseInfiniteEventsOptions
 ): UseInfiniteEventsResult {
-  const { filters, pageSize = 100, maxLoadedEvents = 500 } = options;
+  const { filters, pageSize = 200, maxLoadedEvents = 2000 } = options;
 
   const [events, setEvents] = useState<Event[]>([]);
   const [total, setTotal] = useState(0);
@@ -64,45 +64,64 @@ export function useInfiniteEvents(
 
       setIsLoading(true);
 
+      const MAX_EMPTY_RETRIES = 10;
+      let currentOffset = pageOffset;
+
       try {
-        const params: Record<string, string> = {
-          ...filters,
-          limit: String(pageSize),
-          offset: String(pageOffset),
-        };
+        for (let attempt = 0; attempt <= MAX_EMPTY_RETRIES; attempt++) {
+          const params: Record<string, string> = {
+            ...filters,
+            limit: String(pageSize),
+            offset: String(currentOffset),
+          };
 
-        const result = await api.events.list(params);
+          const result = await api.events.list(params);
 
-        // If this request was aborted, bail out
-        if (controller.signal.aborted) return;
+          // If this request was aborted, bail out
+          if (controller.signal.aborted) return;
 
-        setTotal(result.total);
+          setTotal(result.total);
 
-        if (mode === "replace") {
-          setEvents(result.events);
-          baseOffsetRef.current = pageOffset;
-          setOffset(pageOffset);
-        } else if (mode === "append") {
-          setEvents((prev) => {
-            const combined = [...prev, ...result.events];
-            // Trim from the front if we exceed max loaded
-            if (combined.length > maxLoadedEvents) {
-              const trimCount = combined.length - maxLoadedEvents;
-              baseOffsetRef.current += trimCount;
-              return combined.slice(trimCount);
+          // If page is empty but more exist, auto-advance to next page
+          if (result.events.length === 0) {
+            const nextOffset = currentOffset + pageSize;
+            if (nextOffset < result.total && attempt < MAX_EMPTY_RETRIES) {
+              currentOffset = nextOffset;
+              continue;
             }
-            return combined;
-          });
-        } else if (mode === "prepend") {
-          setEvents((prev) => {
-            const combined = [...result.events, ...prev];
-            // Trim from the back if we exceed max loaded
-            if (combined.length > maxLoadedEvents) {
-              return combined.slice(0, maxLoadedEvents);
-            }
-            return combined;
-          });
-          baseOffsetRef.current = pageOffset;
+            // No more pages or max retries — stop
+            break;
+          }
+
+          if (mode === "replace") {
+            setEvents(result.events);
+            baseOffsetRef.current = currentOffset;
+            setOffset(currentOffset);
+          } else if (mode === "append") {
+            setEvents((prev) => {
+              const combined = [...prev, ...result.events];
+              // Trim from the front if we exceed max loaded
+              if (combined.length > maxLoadedEvents) {
+                const trimCount = combined.length - maxLoadedEvents;
+                baseOffsetRef.current += trimCount;
+                return combined.slice(trimCount);
+              }
+              return combined;
+            });
+          } else if (mode === "prepend") {
+            setEvents((prev) => {
+              const combined = [...result.events, ...prev];
+              // Trim from the back if we exceed max loaded
+              if (combined.length > maxLoadedEvents) {
+                return combined.slice(0, maxLoadedEvents);
+              }
+              return combined;
+            });
+            baseOffsetRef.current = currentOffset;
+          }
+
+          // Got events, done
+          break;
         }
       } catch (err) {
         // Ignore abort errors

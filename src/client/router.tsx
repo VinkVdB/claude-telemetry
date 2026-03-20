@@ -4,6 +4,7 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
 import { RawExplorerPage } from "./pages/RawExplorerPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 export const router = createBrowserRouter([
   {
@@ -13,6 +14,7 @@ export const router = createBrowserRouter([
       { path: "/projects/:id", element: <ProjectDetailPage /> },
       { path: "/sessions/:id", element: <SessionDetailPage /> },
       { path: "/raw", element: <RawExplorerPage /> },
+      { path: "/settings", element: <SettingsPage /> },
     ],
   },
 ]);

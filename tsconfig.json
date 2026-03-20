@@ -12,7 +12,8 @@
     "baseUrl": ".",
     "paths": {
       "@server/*": ["src/server/*"],
-      "@client/*": ["src/client/*"]
+      "@client/*": ["src/client/*"],
+      "@shared/*": ["src/shared/*"]
     }
   },
   "include": ["src/**/*", "test/**/*"]

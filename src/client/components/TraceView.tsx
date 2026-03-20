@@ -1,5 +1,5 @@
 // src/client/components/TraceView.tsx
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import type { Event, Agent } from "../lib/types";
 import { DetailPanel } from "./DetailPanel";
 import { formatTokens, formatCost, cn } from "../lib/utils";
@@ -20,6 +20,43 @@ interface Span {
 
 export function TraceView({ events, agents }: { events: Event[]; agents: Agent[] }) {
   const [selected, setSelected] = useState<Event | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(800);
+
+  // Track container width
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width } = entries[0].contentRect;
+      setContainerWidth(Math.max(width, 400));
+    });
+    ro.observe(el);
+    const rect = el.getBoundingClientRect();
+    setContainerWidth(Math.max(rect.width, 400));
+    return () => ro.disconnect();
+  }, []);
+
+  const timelineWidth = Math.max(containerWidth - LABEL_WIDTH - 20, 200);
+
+  // Assign lanes based on agent_id, not session_id
+  const agentLanes = useMemo(() => {
+    const lanes = new Map<string | null, number>();
+    lanes.set(null, 0); // main session = lane 0
+    agents.forEach((a, i) => {
+      lanes.set(a.id, i + 1);
+    });
+    return lanes;
+  }, [agents]);
+
+  const laneLabels = useMemo(() => {
+    const labels = new Map<number, string>();
+    labels.set(0, "main");
+    agents.forEach((a, i) => {
+      labels.set(i + 1, a.agent_type ?? `agent-${i}`);
+    });
+    return labels;
+  }, [agents]);
 
   const { spans, totalMs, minTime } = useMemo(() => {
     const assistantEvents = events.filter((e) => e.type === "assistant" && e.timestamp);
@@ -30,17 +67,6 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
     const maxT = Math.max(...times);
     const totalMs = Math.max(maxT - minT, 1000); // minimum 1s range
 
-    // Assign lanes based on session_id (main = lane 0, subagents = lane 1+)
-    const sessionLanes = new Map<string, number>();
-    const mainSessionId = events[0]?.session_id;
-    if (mainSessionId) sessionLanes.set(mainSessionId, 0);
-
-    agents.forEach((a, i) => {
-      if (!sessionLanes.has(a.session_id)) {
-        sessionLanes.set(a.session_id, sessionLanes.size);
-      }
-    });
-
     const spans: Span[] = assistantEvents.map((e, i) => {
       const startMs = new Date(e.timestamp).getTime() - minT;
       // Estimate end time: use duration_ms if available, else use next event's timestamp, else 2s default
@@ -48,7 +74,7 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
       const duration = e.duration_ms ?? (nextEvent
         ? Math.min(new Date(nextEvent.timestamp).getTime() - new Date(e.timestamp).getTime(), 30000)
         : 2000);
-      const lane = sessionLanes.get(e.session_id) ?? 0;
+      const lane = agentLanes.get(e.agent_id) ?? 0;
       const color = AGENT_COLORS[lane % AGENT_COLORS.length];
 
       return {
@@ -62,26 +88,15 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
     });
 
     return { spans, totalMs, minTime: minT };
-  }, [events, agents]);
+  }, [events, agentLanes]);
 
   if (spans.length === 0) return <p className="text-muted text-sm">No trace data available.</p>;
 
   const laneCount = Math.max(...spans.map((s) => s.lane)) + 1;
   const svgHeight = laneCount * (ROW_HEIGHT + 8) + 40;
-  const timelineWidth = 800;
-
-  // Lane labels
-  const laneLabels = new Map<number, string>();
-  laneLabels.set(0, "main");
-  agents.forEach((a, i) => {
-    const lane = i + 1; // simplified
-    if (!laneLabels.has(lane)) {
-      laneLabels.set(lane, a.agent_type ?? `agent-${i}`);
-    }
-  });
 
   return (
-    <div className="overflow-x-auto">
+    <div ref={containerRef} className="overflow-x-auto">
       <svg width={LABEL_WIDTH + timelineWidth + 20} height={svgHeight} className="text-sm">
         {/* Time axis */}
         {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
@@ -98,19 +113,23 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
         })}
 
         {/* Lane labels */}
-        {Array.from(laneLabels.entries()).map(([lane, label]) => (
-          <text
-            key={lane}
-            x={LABEL_WIDTH - 8}
-            y={lane * (ROW_HEIGHT + 8) + ROW_HEIGHT / 2 + 16}
-            fill="#003864"
-            fontSize={12}
-            fontWeight={500}
-            textAnchor="end"
-          >
-            {label}
-          </text>
-        ))}
+        {Array.from(laneLabels.entries()).map(([lane, label]) => {
+          // Only render if this lane has spans
+          if (lane >= laneCount) return null;
+          return (
+            <text
+              key={lane}
+              x={LABEL_WIDTH - 8}
+              y={lane * (ROW_HEIGHT + 8) + ROW_HEIGHT / 2 + 16}
+              fill="#003864"
+              fontSize={12}
+              fontWeight={500}
+              textAnchor="end"
+            >
+              {label}
+            </text>
+          );
+        })}
 
         {/* Spans */}
         {spans.map((span) => {

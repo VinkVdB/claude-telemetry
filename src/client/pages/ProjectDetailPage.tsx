@@ -2,18 +2,21 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { SessionTable } from "../components/SessionTable";
-import type { Project, Session } from "../lib/types";
+import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
+import type { Project, Session, CostBreakdown } from "../lib/types";
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     api.projects.get(id).then(setProject).catch((e) => setError(String(e)));
     api.sessions.list(id).then(setSessions).catch((e) => setError(String(e)));
+    api.projects.costs(id).then(setCosts).catch(() => setCosts([]));
   }, [id]);
 
   if (error) return <p className="text-red-500 p-4">{error}</p>;
@@ -28,6 +31,14 @@ export function ProjectDetailPage() {
       </div>
       <h1 className="text-2xl font-semibold text-primary-dark mb-1">{project.name}</h1>
       <p className="text-sm text-muted mb-6">{project.path}</p>
+      <CostBreakdownPanel
+        totalInputTokens={project.total_input_tokens ?? 0}
+        totalOutputTokens={project.total_output_tokens ?? 0}
+        totalCacheRead={project.total_cache_read ?? 0}
+        totalCacheCreation={project.total_cache_creation ?? 0}
+        totalCost={project.total_cost ?? 0}
+        perModel={costs}
+      />
       <SessionTable sessions={sessions} />
     </div>
   );

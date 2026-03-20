@@ -6,6 +6,20 @@ export interface Project {
   session_count: number;
   total_cost: number;
   total_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read: number;
+  total_cache_creation: number;
+}
+
+export interface CostBreakdown {
+  model: string;
+  event_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  cost_usd: number;
 }
 
 export interface Session {

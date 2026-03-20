@@ -1,4 +1,4 @@
-import type { Project, Session, Event, Agent } from "./types";
+import type { Project, Session, Event, Agent, CostBreakdown } from "./types";
 
 const BASE = "/api";
 
@@ -12,10 +12,12 @@ export const api = {
   projects: {
     list: () => get<Project[]>("/projects"),
     get: (id: string) => get<Project>(`/projects/${encodeURIComponent(id)}`),
+    costs: (id: string) => get<CostBreakdown[]>(`/projects/${encodeURIComponent(id)}/costs`),
   },
   sessions: {
     list: (projectId: string) => get<Session[]>(`/sessions?projectId=${encodeURIComponent(projectId)}`),
     get: (id: string) => get<Session>(`/sessions/${id}`),
+    costs: (id: string) => get<CostBreakdown[]>(`/sessions/${id}/costs`),
   },
   events: {
     list: (params: Record<string, string>) => {

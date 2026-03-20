@@ -1,6 +1,7 @@
 // src/client/components/DetailPanel.tsx
 import type { Event } from "../lib/types";
 import { formatTokens, formatCost } from "../lib/utils";
+import { tokenTypeCost } from "@shared/pricing";
 
 export function DetailPanel({ event, onClose }: { event: Event | null; onClose: () => void }) {
   if (!event) return null;
@@ -22,19 +23,61 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
           <div><span className="text-muted">Type:</span> <strong>{event.type}</strong></div>
           <div><span className="text-muted">Model:</span> <strong>{event.model ?? "—"}</strong></div>
           {event.tool_name && <div><span className="text-muted">Tool:</span> <strong>{event.tool_name}</strong></div>}
-          {event.input_tokens != null && (
-            <div><span className="text-muted">Input:</span> <strong>{formatTokens(event.input_tokens)}</strong></div>
-          )}
-          {event.output_tokens != null && (
-            <div><span className="text-muted">Output:</span> <strong>{formatTokens(event.output_tokens)}</strong></div>
-          )}
-          {event.cost_usd != null && (
-            <div><span className="text-muted">Cost:</span> <strong>{formatCost(event.cost_usd)}</strong></div>
-          )}
           {event.duration_ms != null && (
             <div><span className="text-muted">Duration:</span> <strong>{event.duration_ms}ms</strong></div>
           )}
         </div>
+
+        {/* Token & cost breakdown */}
+        {(event.input_tokens != null || event.output_tokens != null) && (
+          <div className="bg-surface rounded-lg p-3">
+            <h4 className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">Tokens & Cost</h4>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div>
+                <span className="text-muted text-xs">Input</span>
+                <p className="font-semibold text-primary-dark">
+                  {formatTokens(event.input_tokens)}
+                  {event.model && event.input_tokens != null && (
+                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "input", event.input_tokens))})</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <span className="text-muted text-xs">Output</span>
+                <p className="font-semibold text-primary-dark">
+                  {formatTokens(event.output_tokens)}
+                  {event.model && event.output_tokens != null && (
+                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "output", event.output_tokens))})</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <span className="text-muted text-xs">Cache read</span>
+                <p className="font-semibold text-primary-dark">
+                  {formatTokens(event.cache_read_tokens)}
+                  {event.model && event.cache_read_tokens != null && (
+                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "cache_read", event.cache_read_tokens))})</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <span className="text-muted text-xs">Cache creation</span>
+                <p className="font-semibold text-primary-dark">
+                  {formatTokens(event.cache_creation_tokens)}
+                  {event.model && event.cache_creation_tokens != null && (
+                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "cache_write", event.cache_creation_tokens))})</span>
+                  )}
+                </p>
+              </div>
+            </div>
+            {event.cost_usd != null && (
+              <div className="mt-2 pt-2 border-t border-border flex justify-between items-baseline">
+                <span className="text-xs text-muted">Total cost</span>
+                <span className="font-bold text-primary-dark">{formatCost(event.cost_usd)}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {content.length > 0 && (
           <div>

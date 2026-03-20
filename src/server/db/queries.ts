@@ -21,6 +21,7 @@ export function upsertSession(
   projectId: string,
   data: { gitBranch?: string; slug?: string; startedAt?: string }
 ): void {
+  if (!id) return; // Guard: never insert sessions with null/empty IDs
   db.run(
     `INSERT INTO sessions (id, project_id, git_branch, slug, started_at)
      VALUES (?, ?, ?, ?, ?)
@@ -133,20 +134,27 @@ export function setCursor(db: Database, filePath: string, byteOffset: number, li
 
 // --- Read queries for API ---
 
-export function listProjects(db: Database) {
-  return db.query(`
+function projectWithStatsSQL(where?: string): string {
+  return `
     SELECT p.*,
       (SELECT COUNT(*) FROM sessions WHERE project_id = p.id) as session_count,
       (SELECT COALESCE(SUM(total_cost_usd), 0) FROM sessions WHERE project_id = p.id) as total_cost,
       (SELECT COALESCE(SUM(total_input_tokens + total_output_tokens + total_cache_read + total_cache_creation), 0)
-       FROM sessions WHERE project_id = p.id) as total_tokens
+       FROM sessions WHERE project_id = p.id) as total_tokens,
+      (SELECT COALESCE(SUM(total_input_tokens), 0) FROM sessions WHERE project_id = p.id) as total_input_tokens,
+      (SELECT COALESCE(SUM(total_output_tokens), 0) FROM sessions WHERE project_id = p.id) as total_output_tokens,
+      (SELECT COALESCE(SUM(total_cache_read), 0) FROM sessions WHERE project_id = p.id) as total_cache_read,
+      (SELECT COALESCE(SUM(total_cache_creation), 0) FROM sessions WHERE project_id = p.id) as total_cache_creation
     FROM projects p
-    ORDER BY p.last_active DESC
-  `).all();
+    ${where ?? ""}`;
+}
+
+export function listProjects(db: Database) {
+  return db.query(projectWithStatsSQL() + "\n    ORDER BY p.last_active DESC").all();
 }
 
 export function getProject(db: Database, id: string) {
-  return db.query("SELECT * FROM projects WHERE id = ?").get(id);
+  return db.query(projectWithStatsSQL("WHERE p.id = ?")).get(id);
 }
 
 export function listSessions(db: Database, projectId: string) {
@@ -155,7 +163,7 @@ export function listSessions(db: Database, projectId: string) {
       (SELECT COUNT(*) FROM agents WHERE session_id = s.id) as agent_count,
       (SELECT COUNT(*) FROM events WHERE session_id = s.id) as event_count
     FROM sessions s
-    WHERE s.project_id = ? AND s.id IS NOT NULL
+    WHERE s.project_id = ?
     ORDER BY s.started_at DESC
   `).all(projectId);
 }
@@ -192,6 +200,41 @@ export function listEvents(
       .all(...params, limit, offset),
     total: (db.query(`SELECT COUNT(*) as c FROM events ${where}`).get(...params) as any).c,
   };
+}
+
+export function getProjectCostBreakdown(db: Database, projectId: string) {
+  return db.query(`
+    SELECT
+      e.model,
+      COUNT(*) as event_count,
+      COALESCE(SUM(e.input_tokens), 0) as input_tokens,
+      COALESCE(SUM(e.output_tokens), 0) as output_tokens,
+      COALESCE(SUM(e.cache_read_tokens), 0) as cache_read_tokens,
+      COALESCE(SUM(e.cache_creation_tokens), 0) as cache_creation_tokens,
+      COALESCE(SUM(e.cost_usd), 0) as cost_usd
+    FROM events e
+    JOIN sessions s ON e.session_id = s.id
+    WHERE s.project_id = ? AND e.model IS NOT NULL
+    GROUP BY e.model
+    ORDER BY cost_usd DESC
+  `).all(projectId);
+}
+
+export function getSessionCostBreakdown(db: Database, sessionId: string) {
+  return db.query(`
+    SELECT
+      model,
+      COUNT(*) as event_count,
+      COALESCE(SUM(input_tokens), 0) as input_tokens,
+      COALESCE(SUM(output_tokens), 0) as output_tokens,
+      COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+      COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+      COALESCE(SUM(cost_usd), 0) as cost_usd
+    FROM events
+    WHERE session_id = ? AND model IS NOT NULL
+    GROUP BY model
+    ORDER BY cost_usd DESC
+  `).all(sessionId);
 }
 
 export function listAgents(db: Database, sessionId: string) {

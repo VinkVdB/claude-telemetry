@@ -4,9 +4,10 @@ import { api } from "../lib/api";
 import { AgentTimeline } from "../components/AgentTimeline";
 import { TraceView } from "../components/TraceView";
 import { AgentGraph } from "../components/AgentGraph";
+import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
 import { useSSE } from "../lib/sse";
 import { formatTokens, formatCost, cn } from "../lib/utils";
-import type { Session, Event, Agent } from "../lib/types";
+import type { Session, Event, Agent, CostBreakdown } from "../lib/types";
 
 type Tab = "agents" | "graph-trace";
 
@@ -15,19 +16,22 @@ export function SessionDetailPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [tab, setTab] = useState<Tab>("agents");
   const [live, setLive] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
-    const [sess, evtResult, agts] = await Promise.all([
+    const [sess, evtResult, agts, costData] = await Promise.all([
       api.sessions.get(id),
       api.events.list({ sessionId: id, limit: "10000" }),
       api.agents.list(id),
+      api.sessions.costs(id).catch(() => [] as CostBreakdown[]),
     ]);
     setSession(sess);
     setEvents(evtResult.events);
     setAgents(agts);
+    setCosts(costData);
     setLive(true);
   }, [id]);
 
@@ -59,7 +63,7 @@ export function SessionDetailPage() {
         <span className="text-primary-dark font-medium">{session.slug || session.id.slice(0, 8)}</span>
       </div>
 
-      <div className="flex items-center gap-6 mb-6">
+      <div className="flex items-center gap-6 mb-2">
         <h1 className="text-2xl font-semibold text-primary-dark">{session.slug || "Session"}</h1>
         <div className="flex gap-4 text-sm">
           <span className="text-muted">Tokens: <strong className="text-primary-dark">{formatTokens(totalTokens)}</strong></span>
@@ -76,6 +80,15 @@ export function SessionDetailPage() {
           </span>
         )}
       </div>
+
+      <CostBreakdownPanel
+        totalInputTokens={session.total_input_tokens}
+        totalOutputTokens={session.total_output_tokens}
+        totalCacheRead={session.total_cache_read}
+        totalCacheCreation={session.total_cache_creation}
+        totalCost={session.total_cost_usd}
+        perModel={costs}
+      />
 
       <div className="flex gap-1 mb-4 border-b border-border">
         {tabs.map((t) => (

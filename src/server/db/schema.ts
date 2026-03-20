@@ -85,4 +85,7 @@ export function applySchema(db: Database): void {
 
   // Index on agent_id — created after migration so it works on both new and existing DBs
   db.exec("CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id)");
+
+  // Migration: clean up any NULL-id sessions that slipped in before the guard was added
+  db.exec("DELETE FROM sessions WHERE id IS NULL");
 }

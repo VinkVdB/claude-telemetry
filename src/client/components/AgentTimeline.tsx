@@ -51,7 +51,7 @@ export function AgentTimeline({
     hasMore,
     hasPrevious,
     jumpTargetEventId,
-  } = useInfiniteEvents({ filters: hookFilters });
+  } = useInfiniteEvents({ filters: hookFilters, maxLoadedEvents: settings["display.maxLoadedEvents"] ?? 500 });
 
   // Refresh infinite scroll when SSE signals new data
   const prevRefreshSignal = useRef(refreshSignal);

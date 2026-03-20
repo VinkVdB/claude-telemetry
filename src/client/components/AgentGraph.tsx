@@ -371,20 +371,23 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       >
         <defs>
           {/* Arrow markers per link color */}
-          {links.map((link, i) => (
-            <marker
-              key={`arrow-${i}`}
-              id={`arrow-${i}`}
-              viewBox="0 0 10 6"
-              refX="10"
-              refY="3"
-              markerWidth="8"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 0 L 10 3 L 0 6 Z" fill={link.color} opacity={linkOpacity(link.lastActiveAt)} />
-            </marker>
-          ))}
+          {links.map((link) => {
+            const markerId = `arrow-${link.source}-${link.target}`;
+            return (
+              <marker
+                key={markerId}
+                id={markerId}
+                viewBox="0 0 10 6"
+                refX="10"
+                refY="3"
+                markerWidth="8"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 3 L 0 6 Z" fill={link.color} opacity={linkOpacity(link.lastActiveAt)} />
+              </marker>
+            );
+          })}
         </defs>
 
         <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
@@ -394,27 +397,31 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
             const targetPos = nodePositions.get(link.target);
             if (!sourcePos || !targetPos) return null;
 
-            // Shorten line so arrow sits at circle edge
+            // Shorten line so arrow tip sits at circle edge
             const targetNode = nodes.find((n) => n.id === link.target);
-            const r = targetNode ? radius(targetNode.tokens) : 20;
+            const sourceNode2 = nodes.find((n) => n.id === link.source);
+            const rTarget = targetNode ? radius(targetNode.tokens) : 20;
+            const rSource = sourceNode2 ? radius(sourceNode2.tokens) : 20;
             const dx = targetPos.x - sourcePos.x;
             const dy = targetPos.y - sourcePos.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            const dist = Math.hypot(dx, dy);
             if (dist === 0) return null;
             const nx = dx / dist;
             const ny = dy / dist;
+            // Pull line back: circle radius + arrow marker length (8px at current scale)
+            const markerLen = 8;
 
             return (
               <line
-                key={`link-${i}`}
-                x1={sourcePos.x}
-                y1={sourcePos.y}
-                x2={targetPos.x - nx * (r + 4)}
-                y2={targetPos.y - ny * (r + 4)}
+                key={`${link.source}-${link.target}`}
+                x1={sourcePos.x + nx * rSource}
+                y1={sourcePos.y + ny * rSource}
+                x2={targetPos.x - nx * (rTarget + markerLen)}
+                y2={targetPos.y - ny * (rTarget + markerLen)}
                 stroke={link.color}
                 strokeWidth={linkThickness(link.eventCount)}
                 strokeOpacity={linkOpacity(link.lastActiveAt)}
-                markerEnd={`url(#arrow-${i})`}
+                markerEnd={`url(#arrow-${link.source}-${link.target})`}
               />
             );
           })}

@@ -16,22 +16,22 @@ export function getSetting(db: Database, key: string): any {
   try { return JSON.parse(row.value); } catch { return row.value; }
 }
 
-export function upsertSettings(db: Database, settings: Record<string, any>): void {
+export function upsertSettings(db: Database, updates: Record<string, any>): void {
   const stmt = db.prepare(
-    `INSERT INTO settings (key, value, updated_at)
-     VALUES (?, ?, datetime('now'))
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
   );
-  for (const [key, value] of Object.entries(settings)) {
-    stmt.run(key, JSON.stringify(value));
-  }
+  const tx = db.transaction(() => {
+    for (const [key, value] of Object.entries(updates)) {
+      stmt.run(key, JSON.stringify(value));
+    }
+  });
+  tx();
 }
 
 export function deleteSettings(db: Database, keys: string[]): void {
-  const stmt = db.prepare("DELETE FROM settings WHERE key = ?");
-  for (const key of keys) {
-    stmt.run(key);
-  }
+  const placeholders = keys.map(() => "?").join(", ");
+  db.run(`DELETE FROM settings WHERE key IN (${placeholders})`, keys);
 }
 
 export function deleteAllSettings(db: Database): void {

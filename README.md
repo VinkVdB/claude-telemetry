@@ -50,7 +50,14 @@ docker compose up -d --build
 
 ## Connecting Claude Code to the dashboard (optional OTEL enrichment)
 
-By default the dashboard reads `cost_usd` and `duration_ms` from the JSONL files. For more precise numbers you can also forward Claude Code's OpenTelemetry spans:
+By default, cost is **estimated** by multiplying token counts from the JSONL logs against a local pricing table. This means:
+
+- Costs may differ from your actual Anthropic invoice if you have custom pricing, discounts, or use models not in the table.
+- Per-request `duration_ms` (how long each API call took) is unavailable — it is not written to the JSONL files.
+
+Enabling OTEL enrichment fixes both: Claude Code emits `claude_code.api_request` OpenTelemetry spans that carry the **actual `cost_usd`** returned by Anthropic's API and the **real `duration_ms`** for every LLM call. The receiver matches each span to the corresponding event already in the database and backfills those two fields.
+
+To enable it:
 
 1. Enable the OTEL receiver in `.env`:
 
@@ -65,7 +72,7 @@ By default the dashboard reads `cost_usd` and `duration_ms` from the JSONL files
    {
      "env": {
        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4242",
-       "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf"
+       "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json"
      }
    }
    ```

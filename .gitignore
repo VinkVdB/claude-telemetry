@@ -1,6 +1,30 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Database files
 *.db
+*.db-wal
+*.db-shm
 *.db-journal
+
+# Environment / secrets
 .env
 .env.local
+.env.*.local
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+*.swp
+*.swo
+
+# Tooling
+.superpowers/
+
+# Docker volumes / runtime data
+data/

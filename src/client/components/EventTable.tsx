@@ -53,18 +53,61 @@ function getToolLabel(e: Event): ToolLabel {
     return { text: "\u2014", style: "hook" };
   }
 
-  // user: Answer/Prompt in orange
-  if (e.type === "user" && e.raw) {
-    try {
-      const parsed = JSON.parse(e.raw);
-      const content = parsed?.message?.message?.content;
-      if (Array.isArray(content) && content[0]?.type === "tool_result") {
-        return { text: "Answer", style: "human" };
+  // user: Answer/Prompt in orange, with content preview
+  if (e.type === "user") {
+    // Try to extract preview from raw JSONL
+    if (e.raw) {
+      try {
+        const parsed = JSON.parse(e.raw);
+        const content = parsed?.message?.message?.content;
+        if (Array.isArray(content) && content[0]?.type === "tool_result") {
+          // tool_result: show tool_name if set, or extract preview from result content
+          const resultContent = content[0]?.content;
+          let preview = "";
+          if (typeof resultContent === "string") {
+            preview = resultContent.slice(0, 40);
+          } else if (Array.isArray(resultContent)) {
+            const textBlock = resultContent.find((b: any) => b.type === "text");
+            if (textBlock?.text) preview = textBlock.text.slice(0, 40);
+          }
+          const label = e.tool_name && e.tool_name !== "tool_result"
+            ? e.tool_name
+            : preview
+              ? `Answer: ${preview}${preview.length >= 40 ? "\u2026" : ""}`
+              : "Answer";
+          return { text: label, style: "human" };
+        }
+        if (typeof content === "string") {
+          const preview = content.slice(0, 50);
+          return {
+            text: `Prompt: ${preview}${content.length > 50 ? "\u2026" : ""}`,
+            style: "human",
+          };
+        }
+      } catch {}
+    }
+    // Fallback: try content field (parsed content blocks)
+    if (e.content) {
+      try {
+        const blocks = JSON.parse(e.content);
+        if (Array.isArray(blocks) && blocks[0]?.type === "tool_result") {
+          return { text: e.tool_name ?? "Answer", style: "human" };
+        }
+        if (Array.isArray(blocks)) {
+          const textBlock = blocks.find((b: any) => b.type === "text");
+          if (textBlock?.text) {
+            const preview = textBlock.text.slice(0, 50);
+            return { text: `Prompt: ${preview}${textBlock.text.length > 50 ? "\u2026" : ""}`, style: "human" };
+          }
+        }
+      } catch {
+        // content is a plain string
+        if (typeof e.content === "string" && e.content.length > 0) {
+          const preview = e.content.slice(0, 50);
+          return { text: `Prompt: ${preview}${e.content.length > 50 ? "\u2026" : ""}`, style: "human" };
+        }
       }
-      if (typeof content === "string") {
-        return { text: "Prompt", style: "human" };
-      }
-    } catch {}
+    }
     return { text: "\u2014", style: "hook" };
   }
 
@@ -244,7 +287,11 @@ export function EventTable({
                   onClick={() => onSelect(e)}
                   className={cn(
                     "border-t border-border hover:bg-primary/5 cursor-pointer transition-colors",
-                    selected?.id === e.id ? "bg-primary/10" : ""
+                    selected?.id === e.id
+                      ? "bg-primary/10"
+                      : e.type === "user"
+                        ? "bg-accent/5"
+                        : ""
                   )}
                 >
                   <td className="px-2 py-2 text-right font-mono text-muted text-[10px]">
@@ -284,14 +331,14 @@ export function EventTable({
                   <td className="px-3 py-2 text-muted">
                     {e.model?.replace("claude-", "") ?? "\u2014"}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 max-w-[240px]">
                     {(() => {
                       const toolLabel = getToolLabel(e);
                       if (toolLabel.style === "tool") {
-                        return <span className="font-mono text-primary">{toolLabel.text}</span>;
+                        return <span className="font-mono text-primary truncate block">{toolLabel.text}</span>;
                       }
                       if (toolLabel.style === "human") {
-                        return <span className="font-medium text-amber-600">{toolLabel.text}</span>;
+                        return <span className="font-medium text-amber-600 truncate block" title={toolLabel.text}>{toolLabel.text}</span>;
                       }
                       return <span className="text-muted">{toolLabel.text}</span>;
                     })()}

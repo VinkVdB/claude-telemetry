@@ -80,8 +80,10 @@ export function extractEventData(line: ParsedLine): ExtractedEvent {
   // content can be a string (user messages) or an array of ContentBlock (assistant messages)
   const content: ContentBlock[] | undefined = Array.isArray(rawContent) ? rawContent : undefined;
 
-  // Find first tool_use block for tool_name
+  // Find first tool_use block for tool_name (assistant events)
   const toolUse = content?.find((b) => b.type === "tool_use");
+  // Find first tool_result block for user events
+  const toolResult = content?.find((b) => b.type === "tool_result");
 
   const event: ExtractedEvent = {
     id: line.uuid,
@@ -105,6 +107,10 @@ export function extractEventData(line: ParsedLine): ExtractedEvent {
   if (usage?.cache_creation_input_tokens) event.cacheCreationTokens = usage.cache_creation_input_tokens;
   if (line.message?.stop_reason) event.stopReason = line.message.stop_reason;
   if (toolUse?.name) event.toolName = toolUse.name;
+  // For user events with tool_result content, mark as tool_result
+  if (line.type === "user" && toolResult && !event.toolName) {
+    event.toolName = "tool_result";
+  }
 
   if (line.cwd || line.gitBranch || line.slug) {
     event.sessionMeta = {

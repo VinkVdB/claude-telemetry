@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { AgentTimeline } from "../components/AgentTimeline";
 import { TraceView } from "../components/TraceView";
 import { AgentGraph } from "../components/AgentGraph";
+import { useSSE } from "../lib/sse";
 import { formatTokens, formatCost, cn } from "../lib/utils";
 import type { Session, Event, Agent } from "../lib/types";
 
-type Tab = "agents" | "trace" | "graph";
+type Tab = "agents" | "graph-trace";
 
 export function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,21 +16,35 @@ export function SessionDetailPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tab, setTab] = useState<Tab>("agents");
+  const [live, setLive] = useState(false);
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     if (!id) return;
-    api.sessions.get(id).then(setSession);
-    api.events.list({ sessionId: id, limit: "10000" }).then((r) => setEvents(r.events));
-    api.agents.list(id).then(setAgents);
+    const [sess, evtResult, agts] = await Promise.all([
+      api.sessions.get(id),
+      api.events.list({ sessionId: id, limit: "10000" }),
+      api.agents.list(id),
+    ]);
+    setSession(sess);
+    setEvents(evtResult.events);
+    setAgents(agts);
+    setLive(true);
   }, [id]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  useSSE((event, data) => {
+    if (event === "event" && data.sessionId === id) {
+      fetchData();
+    }
+  });
 
   if (!session) return <p className="text-muted animate-pulse">Loading...</p>;
 
   const totalTokens = session.total_input_tokens + session.total_output_tokens;
   const tabs: { key: Tab; label: string }[] = [
     { key: "agents", label: "Agents" },
-    { key: "trace", label: "Trace" },
-    { key: "graph", label: "Graph" },
+    { key: "graph-trace", label: "Graph & Trace" },
   ];
 
   return (
@@ -50,7 +65,16 @@ export function SessionDetailPage() {
           <span className="text-muted">Tokens: <strong className="text-primary-dark">{formatTokens(totalTokens)}</strong></span>
           <span className="text-muted">Cost: <strong className="text-primary-dark">{formatCost(session.total_cost_usd)}</strong></span>
           <span className="text-muted">Events: <strong className="text-primary-dark">{events.length}</strong></span>
+          {agents.length > 0 && (
+            <span className="text-muted">Agents: <strong className="text-primary-dark">{agents.length}</strong></span>
+          )}
         </div>
+        {live && (
+          <span className="ml-auto flex items-center gap-1.5 text-xs text-green-600">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            Live
+          </span>
+        )}
       </div>
 
       <div className="flex gap-1 mb-4 border-b border-border">
@@ -69,8 +93,12 @@ export function SessionDetailPage() {
       </div>
 
       {tab === "agents" && <AgentTimeline agents={agents} events={events} />}
-      {tab === "trace" && <TraceView events={events} agents={agents} />}
-      {tab === "graph" && <AgentGraph agents={agents} events={events} />}
+      {tab === "graph-trace" && (
+        <div className="space-y-6">
+          <TraceView events={events} agents={agents} />
+          <AgentGraph agents={agents} events={events} />
+        </div>
+      )}
     </div>
   );
 }

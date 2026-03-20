@@ -16,7 +16,7 @@ services:
       - CT_DATA_DIR=/data
       - CT_WATCH_MODE=${CT_WATCH_MODE:-poll}
       - CT_POLL_INTERVAL=${CT_POLL_INTERVAL:-1000}
-      - CT_OTEL_ENABLED=${CT_OTEL_ENABLED:-false}
+      - CT_OTEL_ENABLED=${CT_OTEL_ENABLED:-true}
     restart: unless-stopped
 
 volumes:

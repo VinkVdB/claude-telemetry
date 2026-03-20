@@ -4,7 +4,7 @@ import { statSync } from "fs";
 import { basename, dirname, relative } from "path";
 import type { Database } from "bun:sqlite";
 import { processJsonlLine } from "./processor";
-import { getCursor, setCursor } from "../db/queries";
+import { getCursor, setCursor, upsertAgent, getSession } from "../db/queries";
 import { broadcast } from "../sse/broadcaster";
 
 let watcher: FSWatcher | null = null;
@@ -78,6 +78,7 @@ async function ingestFile(db: Database, filePath: string, projectsDir: string): 
   try {
     const stat = statSync(filePath);
     const cursor = getCursor(db, filePath);
+    const isNewFile = !cursor; // true when file has never been ingested before
     const offset = cursor?.byteOffset ?? 0;
 
     if (stat.size <= offset) return; // No new data
@@ -94,16 +95,54 @@ async function ingestFile(db: Database, filePath: string, projectsDir: string): 
     const projectSlug = relPath.split("/")[0] ?? basename(dirname(filePath));
 
     let processedCount = 0;
+    let firstSessionId: string | null = null;
     for (const line of lines) {
       const result = processJsonlLine(db, line, projectSlug);
       if (result) {
         broadcast("event", result);
+        if (!firstSessionId) firstSessionId = result.sessionId;
         processedCount++;
       }
     }
 
     // Update cursor
     setCursor(db, filePath, stat.size, (cursor?.lineCount ?? 0) + processedCount);
+
+    // Broadcast session_new for newly discovered non-subagent session files
+    if (isNewFile && !filePath.includes("/subagents/") && processedCount > 0 && firstSessionId) {
+      const sess = getSession(db, firstSessionId) as any;
+      broadcast("session_new", {
+        sessionId: firstSessionId,
+        slug: sess?.slug ?? null,
+        projectId: sess?.project_id ?? null,
+      });
+    }
+
+    // Enrich agent from sibling .meta.json for subagent files
+    if (filePath.includes("/subagents/") && filePath.endsWith(".jsonl")) {
+      const metaPath = filePath.replace(".jsonl", ".meta.json");
+      try {
+        const metaContent = await Bun.file(metaPath).text();
+        const meta = JSON.parse(metaContent);
+        // Extract agentId from filename: "agent-{id}.jsonl" -> "{id}"
+        const fileName = basename(filePath, ".jsonl");
+        const agentId = fileName.startsWith("agent-") ? fileName.slice(6) : fileName;
+        // Derive parent session ID from path structure:
+        // {projectsDir}/{projectSlug}/{sessionId}/subagents/agent-{id}.jsonl
+        const parts = filePath.replace(projectsDir + "/", "").split("/");
+        // parts[0] = projectSlug, parts[1] = sessionId, parts[2] = "subagents", parts[3] = filename
+        const parentSessionId = parts[1];
+        if (agentId && parentSessionId) {
+          upsertAgent(db, {
+            id: agentId,
+            sessionId: parentSessionId,
+            agentType: meta.agentType,
+            startedAt: undefined,
+            description: meta.description,
+          });
+        }
+      } catch { /* no meta file or invalid JSON — silently skip */ }
+    }
   } catch (err) {
     console.error(`[watcher] Error processing ${filePath}:`, err);
   }

@@ -8,13 +8,15 @@ export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    api.projects.get(id).then(setProject);
-    api.sessions.list(id).then(setSessions);
+    api.projects.get(id).then(setProject).catch((e) => setError(String(e)));
+    api.sessions.list(id).then(setSessions).catch((e) => setError(String(e)));
   }, [id]);
 
+  if (error) return <p className="text-red-500 p-4">{error}</p>;
   if (!project) return <p className="text-muted animate-pulse">Loading...</p>;
 
   return (

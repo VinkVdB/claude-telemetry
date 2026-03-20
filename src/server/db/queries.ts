@@ -50,14 +50,15 @@ export function insertEvent(
     stopReason?: string;
     content?: string;
     raw?: string;
+    agentId?: string;
   }
 ): void {
   db.run(
     `INSERT OR IGNORE INTO events
      (id, session_id, parent_id, type, timestamp, model,
       input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-      cost_usd, duration_ms, tool_name, stop_reason, content, raw)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      cost_usd, duration_ms, tool_name, stop_reason, content, raw, agent_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       event.id, event.sessionId, event.parentId ?? null,
       event.type, event.timestamp, event.model ?? null,
@@ -66,8 +67,13 @@ export function insertEvent(
       event.costUsd ?? null, event.durationMs ?? null,
       event.toolName ?? null, event.stopReason ?? null,
       event.content ?? null, event.raw ?? null,
+      event.agentId ?? null,
     ]
   );
+  // Backfill agent_id on existing events that were ingested before this column existed
+  if (event.agentId) {
+    db.run(`UPDATE events SET agent_id = ? WHERE id = ? AND agent_id IS NULL`, [event.agentId, event.id]);
+  }
 }
 
 export function updateSessionAggregates(db: Database, sessionId: string): void {
@@ -149,7 +155,7 @@ export function listSessions(db: Database, projectId: string) {
       (SELECT COUNT(*) FROM agents WHERE session_id = s.id) as agent_count,
       (SELECT COUNT(*) FROM events WHERE session_id = s.id) as event_count
     FROM sessions s
-    WHERE s.project_id = ?
+    WHERE s.project_id = ? AND s.id IS NOT NULL
     ORDER BY s.started_at DESC
   `).all(projectId);
 }
@@ -174,7 +180,7 @@ export function listEvents(
 
   if (filters.sessionId) { conditions.push("session_id = ?"); params.push(filters.sessionId); }
   if (filters.type) { conditions.push("type = ?"); params.push(filters.type); }
-  if (filters.model) { conditions.push("model = ?"); params.push(filters.model); }
+  if (filters.model) { conditions.push("model LIKE ?"); params.push(filters.model + "%"); }
   if (filters.toolName) { conditions.push("tool_name = ?"); params.push(filters.toolName); }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -182,7 +188,7 @@ export function listEvents(
   const offset = filters.offset ?? 0;
 
   return {
-    events: db.query(`SELECT * FROM events ${where} ORDER BY timestamp ASC LIMIT ? OFFSET ?`)
+    events: db.query(`SELECT * FROM events ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`)
       .all(...params, limit, offset),
     total: (db.query(`SELECT COUNT(*) as c FROM events ${where}`).get(...params) as any).c,
   };
@@ -191,10 +197,10 @@ export function listEvents(
 export function listAgents(db: Database, sessionId: string) {
   return db.query(`
     SELECT a.*,
-      (SELECT COUNT(*) FROM events WHERE session_id = a.session_id) as event_count,
-      (SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM events WHERE session_id = a.session_id) as total_tokens
+      (SELECT COUNT(*) FROM events WHERE agent_id = a.id) as event_count,
+      (SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM events WHERE agent_id = a.id) as total_tokens
     FROM agents a
-    WHERE a.session_id = ? OR a.parent_session = ?
+    WHERE a.session_id = ?
     ORDER BY a.started_at ASC
-  `).all(sessionId, sessionId);
+  `).all(sessionId);
 }

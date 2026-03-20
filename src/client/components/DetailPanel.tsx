@@ -1,6 +1,6 @@
 // src/client/components/DetailPanel.tsx
 import type { Event } from "../lib/types";
-import { formatTokens, formatCost, cn } from "../lib/utils";
+import { formatTokens, formatCost } from "../lib/utils";
 
 export function DetailPanel({ event, onClose }: { event: Event | null; onClose: () => void }) {
   if (!event) return null;
@@ -12,8 +12,8 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
   } catch { content = []; }
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[480px] bg-white border-l border-border shadow-xl z-50 flex flex-col" style={{ animation: "slideIn 0.2s ease-out" }}>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+    <div className="border border-border rounded-xl bg-white flex flex-col max-h-[calc(100vh-8rem)] overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <h3 className="font-semibold text-primary-dark">Event Detail</h3>
         <button onClick={onClose} className="text-muted hover:text-primary-dark text-xl">&times;</button>
       </div>
@@ -36,39 +36,41 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
           )}
         </div>
 
-        <div>
-          <h4 className="text-sm font-medium text-muted mb-2">Content</h4>
-          {content.map((block: any, i: number) => (
-            <div key={i} className="mb-2">
-              {block.type === "text" && <p className="text-sm whitespace-pre-wrap">{block.text}</p>}
-              {block.type === "thinking" && (
-                <details className="bg-surface rounded-lg p-3">
-                  <summary className="text-xs text-muted cursor-pointer">Thinking</summary>
-                  <p className="text-sm mt-2 whitespace-pre-wrap">{block.thinking}</p>
-                </details>
-              )}
-              {block.type === "tool_use" && (
-                <div className="bg-surface rounded-lg p-3">
-                  <p className="text-xs text-muted mb-1">Tool: <strong className="text-primary">{block.name}</strong></p>
-                  <pre className="text-xs overflow-x-auto">{JSON.stringify(block.input, null, 2)}</pre>
-                </div>
-              )}
-              {block.type === "tool_result" && (
-                <div className="bg-surface rounded-lg p-3">
-                  <p className="text-xs text-muted mb-1">Tool Result</p>
-                  <pre className="text-xs overflow-x-auto">{JSON.stringify(block.content, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+        {content.length > 0 && (
+          <div>
+            <h4 className="text-sm font-medium text-muted mb-2">Content</h4>
+            {content.map((block: any, i: number) => (
+              <div key={i} className="mb-2">
+                {block.type === "text" && <p className="text-sm whitespace-pre-wrap">{block.text}</p>}
+                {block.type === "thinking" && (
+                  <details className="bg-surface rounded-lg p-3">
+                    <summary className="text-xs text-muted cursor-pointer">Thinking</summary>
+                    <p className="text-sm mt-2 whitespace-pre-wrap">{block.thinking}</p>
+                  </details>
+                )}
+                {block.type === "tool_use" && (
+                  <div className="bg-surface rounded-lg p-3">
+                    <p className="text-xs text-muted mb-1">Tool: <strong className="text-primary">{block.name}</strong></p>
+                    <pre className="text-xs overflow-x-auto">{JSON.stringify(block.input, null, 2)}</pre>
+                  </div>
+                )}
+                {block.type === "tool_result" && (
+                  <div className="bg-surface rounded-lg p-3">
+                    <p className="text-xs text-muted mb-1">Tool Result</p>
+                    <pre className="text-xs overflow-x-auto">{JSON.stringify(block.content, null, 2)}</pre>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
-        <details>
-          <summary className="text-xs text-muted cursor-pointer">Raw JSON</summary>
-          <pre className="text-xs mt-2 bg-surface rounded-lg p-3 overflow-x-auto">
+        <div>
+          <p className="text-xs text-muted mb-2 font-medium">Raw JSON</p>
+          <pre className="text-xs bg-surface rounded-lg p-3 overflow-x-auto">
             {event.raw ? (() => { try { return JSON.stringify(JSON.parse(event.raw), null, 2); } catch { return event.raw; } })() : "—"}
           </pre>
-        </details>
+        </div>
       </div>
     </div>
   );

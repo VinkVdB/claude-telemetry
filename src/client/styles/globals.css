@@ -10,6 +10,7 @@
   --color-border: #e2e8f0;
   --color-muted: #64748b;
   --font-sans: "Inter", system-ui, sans-serif;
+  --animate-slide-in-right: slide-in-right 0.2s ease-out;
 }
 
 body {
@@ -21,4 +22,9 @@ body {
 @keyframes slideIn {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }

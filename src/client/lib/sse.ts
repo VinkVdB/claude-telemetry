@@ -13,6 +13,10 @@ export function useSSE(onEvent: (event: string, data: any) => void): void {
       } catch {}
     });
 
+    source.addEventListener("session_new", (e) => {
+      try { callbackRef.current("session_new", JSON.parse(e.data)); } catch {}
+    });
+
     source.onerror = () => {
       // Auto-reconnect is built into EventSource
     };

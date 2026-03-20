@@ -44,7 +44,8 @@ export function applySchema(db: Database): void {
       tool_name       TEXT,
       stop_reason     TEXT,
       content         TEXT,
-      raw             TEXT
+      raw             TEXT,
+      agent_id        TEXT
     );
 
     CREATE TABLE IF NOT EXISTS agents (
@@ -78,4 +79,10 @@ export function applySchema(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
     CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id);
   `);
+
+  // Migration: add agent_id column to existing DBs — must run before the index on agent_id
+  try { db.exec("ALTER TABLE events ADD COLUMN agent_id TEXT"); } catch { /* column already exists */ }
+
+  // Index on agent_id — created after migration so it works on both new and existing DBs
+  db.exec("CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id)");
 }

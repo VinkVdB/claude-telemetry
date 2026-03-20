@@ -9,6 +9,7 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
   if (!parsed) return null;
   // Skip events without a uuid — they can't be deduplicated and corrupt the primary key
   if (!parsed.uuid) return null;
+  if (!parsed.sessionId) return null;
 
   const event = extractEventData(parsed);
 
@@ -54,16 +55,17 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
     stopReason: event.stopReason,
     content: event.content,
     raw: rawLine,
+    agentId: event.agentId,
   });
 
   // Update session aggregates
   updateSessionAggregates(db, event.sessionId);
 
-  // Register sidechain sessions as agents so AgentTimeline/Graph can show them
-  if (parsed.isSidechain) {
+  // Register sidechain agents so AgentTimeline/Graph can show them
+  if (parsed.isSidechain && parsed.agentId) {
     upsertAgent(db, {
-      id: event.sessionId, // use sessionId as agent ID for sidechain sessions
-      sessionId: event.sessionId,
+      id: parsed.agentId,           // agentId from JSONL (e.g. "a37eeb8c230f9c26f")
+      sessionId: event.sessionId,   // event.sessionId IS the parent session ID for subagents
       agentType: (parsed as any).agentType ?? undefined,
       startedAt: event.timestamp,
     });

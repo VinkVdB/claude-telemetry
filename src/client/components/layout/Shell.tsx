@@ -1,5 +1,6 @@
 import { Outlet, NavLink } from "react-router-dom";
 import { cn } from "../../lib/utils";
+import { ToastContainer } from "../Toast";
 
 const navItems = [
   { to: "/", label: "Projects", icon: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" },
@@ -9,6 +10,7 @@ const navItems = [
 export function Shell() {
   return (
     <div className="min-h-screen flex">
+      <ToastContainer />
       <nav className="w-56 bg-surface border-r border-border flex flex-col py-4 px-3 shrink-0">
         <div className="flex items-center gap-2 px-3 mb-8">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">

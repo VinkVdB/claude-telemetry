@@ -18,7 +18,7 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
           </tr>
         </thead>
         <tbody>
-          {sessions.map((s) => {
+          {sessions.filter((s) => s.id).map((s) => {
             const totalTokens = s.total_input_tokens + s.total_output_tokens + s.total_cache_read + s.total_cache_creation;
             const models = JSON.parse(s.models_used || "[]") as string[];
             return (

@@ -28,6 +28,7 @@ export interface Session {
 export interface Event {
   id: string;
   session_id: string;
+  agent_id: string | null;
   parent_id: string | null;
   type: string;
   timestamp: string;

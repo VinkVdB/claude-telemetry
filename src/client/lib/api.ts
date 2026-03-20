@@ -28,4 +28,28 @@ export const api = {
   agents: {
     list: (sessionId: string) => get<Agent[]>(`/agents/${sessionId}`),
   },
+  settings: {
+    get: () => get<Record<string, any>>("/settings"),
+    update: async (updates: Record<string, any>) => {
+      const res = await fetch(`${BASE}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `API error: ${res.status}`);
+      }
+      return res.json() as Promise<Record<string, any>>;
+    },
+    reset: async (keys?: string[]) => {
+      const res = await fetch(`${BASE}/settings/reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keys }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    },
+  },
 };

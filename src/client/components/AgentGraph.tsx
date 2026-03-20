@@ -59,6 +59,8 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
   const panRef = useRef<{ startX: number; startY: number; startTx: number; startTy: number } | null>(null);
   const transformRef = useRef(transform);
   transformRef.current = transform;
+  const simulationRef = useRef<d3Force.Simulation<any, any> | null>(null);
+  const simNodesRef = useRef<any[]>([]);
 
   // Track container size
   useEffect(() => {
@@ -191,6 +193,8 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
     const alphaDecay: number = settings["graph.alphaDecay"] ?? 0.05;
     const continuous: boolean = settings["graph.continuousSimulation"] ?? false;
 
+    simNodesRef.current = simNodes;
+
     const simulation = d3Force
       .forceSimulation(simNodes as any)
       .force("link", d3Force.forceLink(simLinks).id((d: any) => d.id).distance(linkDistance))
@@ -198,6 +202,8 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       .force("center", d3Force.forceCenter(size.width / 2, size.height / 2))
       .force("collide", d3Force.forceCollide(collideRadius))
       .alphaDecay(alphaDecay);
+
+    simulationRef.current = simulation;
 
     if (continuous) {
       simulation.alphaMin(0).alphaTarget(0.01);
@@ -224,7 +230,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       }
     });
 
-    return () => { simulation.stop(); };
+    return () => { simulation.stop(); simulationRef.current = null; };
   }, [nodes.length, links.length, size.width, size.height,
     settings["graph.linkDistance"],
     settings["graph.chargeStrength"],
@@ -284,12 +290,23 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       const t = transformRef.current;
       const svgX = (e.clientX - rect.left - t.x) / t.scale;
       const svgY = (e.clientY - rect.top - t.y) / t.scale;
+      const newX = svgX - drag.offsetX;
+      const newY = svgY - drag.offsetY;
+
+      // Pin the node in the simulation so forces don't fight the drag
+      const sim = simulationRef.current;
+      if (sim) {
+        const simNode = simNodesRef.current.find((n: any) => n.id === drag.nodeId);
+        if (simNode) {
+          simNode.fx = newX;
+          simNode.fy = newY;
+          sim.alpha(0.1).restart();
+        }
+      }
+
       setNodePositions((prev) => {
         const next = new Map(prev);
-        next.set(drag.nodeId, {
-          x: svgX - drag.offsetX,
-          y: svgY - drag.offsetY,
-        });
+        next.set(drag.nodeId, { x: newX, y: newY });
         return next;
       });
       return;
@@ -308,9 +325,19 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
   }, []);
 
   const handleMouseUp = useCallback(() => {
+    // When continuous simulation is off, unpin the node after drag ends
+    const drag = dragRef.current;
+    if (drag && simulationRef.current && !settings["graph.continuousSimulation"]) {
+      const simNode = simNodesRef.current.find((n: any) => n.id === drag.nodeId);
+      if (simNode) {
+        simNode.fx = null;
+        simNode.fy = null;
+      }
+    }
+    // When continuous simulation is ON, fx/fy stay set — node remains pinned
     dragRef.current = null;
     panRef.current = null;
-  }, []);
+  }, [settings]);
 
   // Node drag start
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
@@ -329,6 +356,19 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
     };
     setTooltip(null);
   }, [nodePositions]);
+
+  // Double-click to unpin a node (clear fx/fy so simulation moves it freely)
+  const handleNodeDoubleClick = useCallback((e: React.MouseEvent, nodeId: string) => {
+    e.stopPropagation();
+    const sim = simulationRef.current;
+    if (!sim) return;
+    const simNode = simNodesRef.current.find((n: any) => n.id === nodeId);
+    if (simNode) {
+      simNode.fx = null;
+      simNode.fy = null;
+      sim.alpha(0.3).restart();
+    }
+  }, []);
 
   // Tooltip handlers
   const handleNodeEnter = useCallback((e: React.MouseEvent, node: GraphNode) => {
@@ -466,6 +506,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
                 data-node-id={node.id}
                 transform={`translate(${pos.x}, ${pos.y})`}
                 onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                onDoubleClick={(e) => handleNodeDoubleClick(e, node.id)}
                 onMouseEnter={(e) => handleNodeEnter(e, node)}
                 onMouseLeave={handleNodeLeave}
                 style={{ cursor: "pointer" }}

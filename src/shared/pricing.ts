@@ -65,6 +65,28 @@ export function tokenTypeCost(model: string, type: string, tokens: number): numb
   return (tokens / 1_000_000) * pricing[rateKey];
 }
 
+let _pricingDirty = false;
+
+/** Mark pricing cache as dirty (needs reload from DB). */
+export function markPricingDirty(): void { _pricingDirty = true; }
+
+/** Clear pricing dirty flag after reload. */
+export function clearPricingDirty(): void { _pricingDirty = false; }
+
+/** Returns true if pricing has been changed and needs reload. */
+export function isPricingDirty(): boolean { return _pricingDirty; }
+
+/** Reset pricing cache (for testing). */
+export function invalidatePricingCache(): void {
+  for (const key of Object.keys(PRICING)) delete (PRICING as any)[key];
+  Object.assign(PRICING, {
+    "claude-opus-4-6": { inputPerMToken: 15, outputPerMToken: 75, cacheReadPerMToken: 1.5, cacheWritePerMToken: 18.75 },
+    "claude-sonnet-4-6": { inputPerMToken: 3, outputPerMToken: 15, cacheReadPerMToken: 0.3, cacheWritePerMToken: 3.75 },
+    "claude-haiku-4-5": { inputPerMToken: 0.80, outputPerMToken: 4, cacheReadPerMToken: 0.08, cacheWritePerMToken: 1 },
+  });
+  _pricingDirty = false;
+}
+
 /**
  * Compute total cost across all token types for a model.
  */

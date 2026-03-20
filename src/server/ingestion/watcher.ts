@@ -13,6 +13,8 @@ interface WatcherConfig {
   projectsDir: string;
   watchMode: "auto" | "native" | "poll";
   pollInterval: number;
+  stabilityThreshold?: number;
+  writePollInterval?: number;
 }
 
 export async function startWatcher(db: Database, config: WatcherConfig): Promise<void> {
@@ -37,7 +39,7 @@ export async function startWatcher(db: Database, config: WatcherConfig): Promise
       }
       return false;
     },
-    awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 100 },
+    awaitWriteFinish: { stabilityThreshold: config.stabilityThreshold ?? 200, pollInterval: config.writePollInterval ?? 100 },
   });
 
   watcher.on("add", (filePath) => {

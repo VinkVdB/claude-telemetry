@@ -6,6 +6,8 @@ import { stat } from "node:fs/promises";
 import { loadConfig } from "./config";
 import { getDb } from "./db/connection";
 import { startWatcher } from "./ingestion/watcher";
+import { getSetting } from "./db/settings";
+import { loadPricingFromSettings } from "./db/pricing-loader";
 import { createApiRoutes } from "./api/projects";
 import { createSessionRoutes } from "./api/sessions";
 import { createEventRoutes } from "./api/events";
@@ -15,6 +17,18 @@ import { createOtelRoutes } from "./otel/receiver";
 
 const config = loadConfig();
 const db = getDb(`${config.dataDir}/db/telemetry.db`);
+
+// Load custom pricing from settings DB
+loadPricingFromSettings(db);
+
+// Load server settings from DB (env vars take precedence)
+const dbPollInterval = getSetting(db, "server.pollInterval");
+const dbStabilityThreshold = getSetting(db, "server.stabilityThreshold");
+const dbWritePollInterval = getSetting(db, "server.writePollInterval");
+
+const effectivePollInterval = process.env.CT_POLL_INTERVAL != null ? config.pollInterval : (dbPollInterval ?? config.pollInterval);
+const effectiveStabilityThreshold = dbStabilityThreshold ?? 200;
+const effectiveWritePollInterval = dbWritePollInterval ?? 100;
 
 const app = new Hono();
 
@@ -50,7 +64,9 @@ app.use("*", async (c, next) => {
 startWatcher(db, {
   projectsDir: config.projectsDir,
   watchMode: config.watchMode,
-  pollInterval: config.pollInterval,
+  pollInterval: effectivePollInterval,
+  stabilityThreshold: effectiveStabilityThreshold,
+  writePollInterval: effectiveWritePollInterval,
 }).then(() => {
   console.log(`[watcher] Watching ${config.projectsDir}`);
 });

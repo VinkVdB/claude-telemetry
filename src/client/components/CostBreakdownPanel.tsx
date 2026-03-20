@@ -41,12 +41,32 @@ export function CostBreakdownPanel({
       </div>
 
       {/* Token breakdown */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-2">
-        <TokenStat label="Input" tokens={totalInputTokens} />
-        <TokenStat label="Output" tokens={totalOutputTokens} />
-        <TokenStat label="Cache read" tokens={totalCacheRead} />
-        <TokenStat label="Cache write" tokens={totalCacheCreation} />
-      </div>
+      {(() => {
+        const inputCost = perModel?.reduce((sum, m) => {
+          const p = getModelPricing(m.model);
+          return sum + (p ? tokenCost(m.input_tokens, p.inputPerMToken) : 0);
+        }, 0) ?? 0;
+        const outputCost = perModel?.reduce((sum, m) => {
+          const p = getModelPricing(m.model);
+          return sum + (p ? tokenCost(m.output_tokens, p.outputPerMToken) : 0);
+        }, 0) ?? 0;
+        const cacheReadCost = perModel?.reduce((sum, m) => {
+          const p = getModelPricing(m.model);
+          return sum + (p ? tokenCost(m.cache_read_tokens, p.cacheReadPerMToken) : 0);
+        }, 0) ?? 0;
+        const cacheWriteCost = perModel?.reduce((sum, m) => {
+          const p = getModelPricing(m.model);
+          return sum + (p ? tokenCost(m.cache_creation_tokens, p.cacheWritePerMToken) : 0);
+        }, 0) ?? 0;
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-2">
+            <TokenStat label="Input" tokens={totalInputTokens} cost={inputCost} />
+            <TokenStat label="Output" tokens={totalOutputTokens} cost={outputCost} />
+            <TokenStat label="Cache read" tokens={totalCacheRead} cost={cacheReadCost} />
+            <TokenStat label="Cache write" tokens={totalCacheCreation} cost={cacheWriteCost} />
+          </div>
+        );
+      })()}
 
       {/* Per-model breakdown */}
       {perModel && perModel.length > 0 && (
@@ -65,11 +85,14 @@ export function CostBreakdownPanel({
   );
 }
 
-function TokenStat({ label, tokens }: { label: string; tokens: number }) {
+function TokenStat({ label, tokens, cost }: { label: string; tokens: number; cost?: number }) {
   return (
     <div className="bg-surface rounded-lg px-3 py-2">
       <span className="text-xs text-muted">{label}</span>
-      <p className="font-semibold text-primary-dark">{formatTokens(tokens)}</p>
+      <p className="font-semibold text-primary-dark">
+        {formatTokens(tokens)}
+        {cost != null && cost > 0 && <span className="text-muted text-xs ml-1">({formatCost(cost)})</span>}
+      </p>
     </div>
   );
 }

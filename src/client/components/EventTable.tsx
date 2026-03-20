@@ -28,6 +28,48 @@ export interface EventTableProps {
   onAutoEnableAgent?: (agentId: string | null) => void;
 }
 
+interface ToolLabel {
+  text: string;
+  /** tool = blue (tool use), human = orange (user input), hook = gray (hooks/system) */
+  style: "tool" | "human" | "hook";
+}
+
+function getToolLabel(e: Event): ToolLabel {
+  // assistant: tool_name in blue, or stop_reason in gray
+  if (e.type === "assistant") {
+    if (e.tool_name) return { text: e.tool_name, style: "tool" };
+    if (e.stop_reason) return { text: e.stop_reason, style: "hook" };
+    return { text: "\u2014", style: "hook" };
+  }
+
+  // progress: extract hookName from raw JSON — gray
+  if (e.type === "progress" && e.raw) {
+    try {
+      const parsed = JSON.parse(e.raw);
+      const hookName = parsed?.data?.hookName;
+      if (hookName) return { text: hookName, style: "hook" };
+    } catch {}
+    return { text: "\u2014", style: "hook" };
+  }
+
+  // user: Answer/Prompt in orange
+  if (e.type === "user" && e.raw) {
+    try {
+      const parsed = JSON.parse(e.raw);
+      const content = parsed?.message?.message?.content;
+      if (Array.isArray(content) && content[0]?.type === "tool_result") {
+        return { text: "Answer", style: "human" };
+      }
+      if (typeof content === "string") {
+        return { text: "Prompt", style: "human" };
+      }
+    } catch {}
+    return { text: "\u2014", style: "hook" };
+  }
+
+  return { text: "\u2014", style: "hook" };
+}
+
 function formatTimestamp(ts: string) {
   const d = new Date(ts);
   return d.toLocaleString(undefined, {
@@ -144,7 +186,7 @@ export function EventTable({
   const minVisible = visibleNumbers.length > 0 ? Math.min(...visibleNumbers) : 0;
   const maxVisible = visibleNumbers.length > 0 ? Math.max(...visibleNumbers) : 0;
 
-  const colCount = showAgentColumn ? 9 : 8;
+  const colCount = showAgentColumn ? 11 : 10;
 
   return (
     <div className="flex flex-col">
@@ -174,6 +216,8 @@ export function EventTable({
               <th className="px-3 py-2 font-medium">Tool</th>
               <th className="px-3 py-2 font-medium text-right">In</th>
               <th className="px-3 py-2 font-medium text-right">Out</th>
+              <th className="px-3 py-2 font-medium text-right">Read</th>
+              <th className="px-3 py-2 font-medium text-right">Write</th>
               <th className="px-3 py-2 font-medium text-right">Cost</th>
             </tr>
           </thead>
@@ -229,8 +273,17 @@ export function EventTable({
                   <td className="px-3 py-2 text-muted">
                     {e.model?.replace("claude-", "") ?? "\u2014"}
                   </td>
-                  <td className="px-3 py-2 font-mono text-primary">
-                    {e.tool_name ?? "\u2014"}
+                  <td className="px-3 py-2">
+                    {(() => {
+                      const toolLabel = getToolLabel(e);
+                      if (toolLabel.style === "tool") {
+                        return <span className="font-mono text-primary">{toolLabel.text}</span>;
+                      }
+                      if (toolLabel.style === "human") {
+                        return <span className="font-medium text-amber-600">{toolLabel.text}</span>;
+                      }
+                      return <span className="text-muted">{toolLabel.text}</span>;
+                    })()}
                   </td>
                   <td className="px-3 py-2 text-right font-mono">
                     {e.input_tokens != null
@@ -241,6 +294,12 @@ export function EventTable({
                     {e.output_tokens != null
                       ? formatTokens(e.output_tokens)
                       : "\u2014"}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {e.cache_read_tokens != null ? formatTokens(e.cache_read_tokens) : "\u2014"}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {e.cache_creation_tokens != null ? formatTokens(e.cache_creation_tokens) : "\u2014"}
                   </td>
                   <td className="px-3 py-2 text-right font-mono">
                     {e.cost_usd != null ? formatCost(e.cost_usd) : "\u2014"}

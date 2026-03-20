@@ -49,7 +49,7 @@ export const api = {
         body: JSON.stringify({ keys }),
       });
       if (!res.ok) throw new Error(`API error: ${res.status}`);
-      return res.json();
+      return res.json() as Promise<Record<string, any>>;
     },
   },
 };

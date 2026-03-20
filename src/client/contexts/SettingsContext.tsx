@@ -28,9 +28,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetSettings = useCallback(async (keys?: string[]) => {
-    await api.settings.reset(keys);
-    const fresh = await api.settings.get();
-    setSettings(fresh);
+    const merged = await api.settings.reset(keys);
+    setSettings(merged);
   }, []);
 
   return (

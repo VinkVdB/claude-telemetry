@@ -30,6 +30,14 @@ export function AgentTimeline({
   const { settings } = useSettings();
   const AGENT_COLORS: string[] = settings["graph.agentColors"] ?? ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
   const MAIN_COLOR: string = settings["graph.mainColor"] ?? "#003864";
+  const formatOpts = {
+    kThreshold: settings["display.tokenKThreshold"] as number,
+    mThreshold: settings["display.tokenMThreshold"] as number,
+    costPrecisionThreshold: settings["display.costPrecisionThreshold"] as number,
+    timeAgoJustNow: settings["display.timeAgoJustNow"] as number,
+    timeAgoMinutes: settings["display.timeAgoMinutes"] as number,
+    timeAgoHours: settings["display.timeAgoHours"] as number,
+  };
   const [selected, setSelected] = useState<Event | null>(null);
   const [visibleAgents, setVisibleAgents] = useState<Set<string | null>>(() => {
     const set = new Set<string | null>([null]);
@@ -207,8 +215,8 @@ export function AgentTimeline({
               )}
               <div className="flex items-center gap-3 text-xs text-muted mt-1">
                 <span>{s.eventCount} events</span>
-                <span>{formatTokens(s.totalTokens)} tok</span>
-                {s.lastActive && <span className="ml-auto">{timeAgo(s.lastActive)}</span>}
+                <span>{formatTokens(s.totalTokens, formatOpts)} tok</span>
+                {s.lastActive && <span className="ml-auto">{timeAgo(s.lastActive, formatOpts)}</span>}
               </div>
             </div>
           );

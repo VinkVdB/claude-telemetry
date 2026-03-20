@@ -54,6 +54,9 @@ export function createSettingsRoutes(app: Hono, db: Database): void {
     // Always invalidate pricing cache on reset
     invalidatePricingCache();
 
-    return c.json({ ok: true });
+    // Return merged settings so client can update without a follow-up GET
+    const defaults = getDefaults();
+    const overrides = getAllSettings(db);
+    return c.json({ ...defaults, ...overrides });
   });
 }

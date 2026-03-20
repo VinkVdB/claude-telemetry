@@ -43,6 +43,10 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
   const { settings } = useSettings();
   const AGENT_COLORS: string[] = settings["graph.agentColors"] ?? ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
   const MAIN_COLOR: string = settings["graph.mainColor"] ?? "#003864";
+  const formatOpts = {
+    kThreshold: settings["display.tokenKThreshold"] as number,
+    mThreshold: settings["display.tokenMThreshold"] as number,
+  };
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ width: 800, height: 1000 });
@@ -221,7 +225,16 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
     });
 
     return () => { simulation.stop(); };
-  }, [nodes.length, links.length, size.width, size.height]); // Only re-run on structural changes
+  }, [nodes.length, links.length, size.width, size.height,
+    settings["graph.linkDistance"],
+    settings["graph.chargeStrength"],
+    settings["graph.collideRadius"],
+    settings["graph.alphaDecay"],
+    settings["graph.continuousSimulation"],
+    settings["graph.linkThicknessMin"],
+    settings["graph.linkThicknessMax"],
+    settings["graph.opacityDecayMinutes"],
+  ]);
 
   // Zoom handler — attached directly to DOM for non-passive event handling
   useEffect(() => {
@@ -503,7 +516,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
             <div>Type: {tooltip.node.type}</div>
             {tooltip.node.description && <div>Description: {tooltip.node.description}</div>}
             <div>Events: {tooltip.node.eventCount}</div>
-            <div>Tokens: {formatTokens(tooltip.node.tokens)}</div>
+            <div>Tokens: {formatTokens(tooltip.node.tokens, formatOpts)}</div>
           </div>
         </div>
       )}

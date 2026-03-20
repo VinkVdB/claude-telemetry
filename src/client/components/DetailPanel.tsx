@@ -2,8 +2,16 @@
 import type { Event } from "../lib/types";
 import { formatTokens, formatCost } from "../lib/utils";
 import { tokenTypeCost } from "@shared/pricing";
+import { useSettings } from "../contexts/SettingsContext";
 
 export function DetailPanel({ event, onClose }: { event: Event | null; onClose: () => void }) {
+  const { settings } = useSettings();
+  const formatOpts = {
+    kThreshold: settings["display.tokenKThreshold"] as number,
+    mThreshold: settings["display.tokenMThreshold"] as number,
+    costPrecisionThreshold: settings["display.costPrecisionThreshold"] as number,
+  };
+
   if (!event) return null;
 
   let content: any[] = [];
@@ -36,36 +44,36 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
               <div>
                 <span className="text-muted text-xs">Input</span>
                 <p className="font-semibold text-primary-dark">
-                  {formatTokens(event.input_tokens)}
+                  {formatTokens(event.input_tokens, formatOpts)}
                   {event.model && event.input_tokens != null && (
-                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "input", event.input_tokens))})</span>
+                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "input", event.input_tokens), formatOpts)})</span>
                   )}
                 </p>
               </div>
               <div>
                 <span className="text-muted text-xs">Output</span>
                 <p className="font-semibold text-primary-dark">
-                  {formatTokens(event.output_tokens)}
+                  {formatTokens(event.output_tokens, formatOpts)}
                   {event.model && event.output_tokens != null && (
-                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "output", event.output_tokens))})</span>
+                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "output", event.output_tokens), formatOpts)})</span>
                   )}
                 </p>
               </div>
               <div>
                 <span className="text-muted text-xs">Cache read</span>
                 <p className="font-semibold text-primary-dark">
-                  {formatTokens(event.cache_read_tokens)}
+                  {formatTokens(event.cache_read_tokens, formatOpts)}
                   {event.model && event.cache_read_tokens != null && (
-                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "cache_read", event.cache_read_tokens))})</span>
+                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "cache_read", event.cache_read_tokens), formatOpts)})</span>
                   )}
                 </p>
               </div>
               <div>
                 <span className="text-muted text-xs">Cache write</span>
                 <p className="font-semibold text-primary-dark">
-                  {formatTokens(event.cache_creation_tokens)}
+                  {formatTokens(event.cache_creation_tokens, formatOpts)}
                   {event.model && event.cache_creation_tokens != null && (
-                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "cache_write", event.cache_creation_tokens))})</span>
+                    <span className="text-muted text-xs ml-1">({formatCost(tokenTypeCost(event.model, "cache_write", event.cache_creation_tokens), formatOpts)})</span>
                   )}
                 </p>
               </div>
@@ -73,7 +81,7 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
             {event.cost_usd != null && (
               <div className="mt-2 pt-2 border-t border-border flex justify-between items-baseline">
                 <span className="text-xs text-muted">Total cost</span>
-                <span className="font-bold text-primary-dark">{formatCost(event.cost_usd)}</span>
+                <span className="font-bold text-primary-dark">{formatCost(event.cost_usd, formatOpts)}</span>
               </div>
             )}
           </div>

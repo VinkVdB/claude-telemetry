@@ -104,6 +104,14 @@ export function EventTable({
 }: EventTableProps) {
   const { settings } = useSettings();
   const jumpStep = settings["display.jumpStepSize"] ?? 50;
+  const formatOpts = {
+    kThreshold: settings["display.tokenKThreshold"] as number,
+    mThreshold: settings["display.tokenMThreshold"] as number,
+    costPrecisionThreshold: settings["display.costPrecisionThreshold"] as number,
+    timeAgoJustNow: settings["display.timeAgoJustNow"] as number,
+    timeAgoMinutes: settings["display.timeAgoMinutes"] as number,
+    timeAgoHours: settings["display.timeAgoHours"] as number,
+  };
   const scrollRef = useRef<HTMLDivElement>(null);
   const [jumpInput, setJumpInput] = useState("");
   const prevScrollHeightRef = useRef(0);
@@ -244,7 +252,7 @@ export function EventTable({
                   </td>
                   <td
                     className="px-3 py-2 font-mono text-muted whitespace-nowrap"
-                    title={timeAgo(e.timestamp)}
+                    title={timeAgo(e.timestamp, formatOpts)}
                   >
                     {formatTimestamp(e.timestamp)}
                   </td>
@@ -290,22 +298,22 @@ export function EventTable({
                   </td>
                   <td className="px-3 py-2 text-right font-mono">
                     {e.input_tokens != null
-                      ? formatTokens(e.input_tokens)
+                      ? formatTokens(e.input_tokens, formatOpts)
                       : "\u2014"}
                   </td>
                   <td className="px-3 py-2 text-right font-mono">
                     {e.output_tokens != null
-                      ? formatTokens(e.output_tokens)
+                      ? formatTokens(e.output_tokens, formatOpts)
                       : "\u2014"}
                   </td>
                   <td className="px-3 py-2 text-right font-mono">
-                    {e.cache_read_tokens != null ? formatTokens(e.cache_read_tokens) : "\u2014"}
+                    {e.cache_read_tokens != null ? formatTokens(e.cache_read_tokens, formatOpts) : "\u2014"}
                   </td>
                   <td className="px-3 py-2 text-right font-mono">
-                    {e.cache_creation_tokens != null ? formatTokens(e.cache_creation_tokens) : "\u2014"}
+                    {e.cache_creation_tokens != null ? formatTokens(e.cache_creation_tokens, formatOpts) : "\u2014"}
                   </td>
                   <td className="px-3 py-2 text-right font-mono">
-                    {e.cost_usd != null ? formatCost(e.cost_usd) : "\u2014"}
+                    {e.cost_usd != null ? formatCost(e.cost_usd, formatOpts) : "\u2014"}
                   </td>
                 </tr>
               );

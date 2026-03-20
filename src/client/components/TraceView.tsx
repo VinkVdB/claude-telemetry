@@ -3,11 +3,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import type { Event, Agent } from "../lib/types";
 import { DetailPanel } from "./DetailPanel";
 import { formatTokens, formatCost, cn } from "../lib/utils";
-
-const AGENT_COLORS = ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
-const ROW_HEIGHT = 32;
-const LABEL_WIDTH = 160;
-const MIN_SPAN_WIDTH = 4;
+import { useSettings } from "../contexts/SettingsContext";
 
 interface Span {
   event: Event;
@@ -19,6 +15,11 @@ interface Span {
 }
 
 export function TraceView({ events, agents }: { events: Event[]; agents: Agent[] }) {
+  const { settings } = useSettings();
+  const AGENT_COLORS: string[] = settings["graph.agentColors"] ?? ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
+  const ROW_HEIGHT: number = settings["display.traceRowHeight"] ?? 32;
+  const LABEL_WIDTH: number = settings["display.traceLabelWidth"] ?? 160;
+  const MIN_SPAN_WIDTH: number = settings["display.traceMinSpanWidth"] ?? 4;
   const [selected, setSelected] = useState<Event | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(800);

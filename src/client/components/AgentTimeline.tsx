@@ -4,9 +4,7 @@ import { DetailPanel } from "./DetailPanel";
 import { EventTable } from "./EventTable";
 import { useInfiniteEvents } from "../hooks/useInfiniteEvents";
 import { formatTokens, timeAgo, cn } from "../lib/utils";
-
-const AGENT_COLORS = ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
-const MAIN_COLOR = "#003864";
+import { useSettings } from "../contexts/SettingsContext";
 
 interface AgentSummary {
   id: string | null;
@@ -29,6 +27,9 @@ export function AgentTimeline({
   sessionId: string;
   refreshSignal?: number;
 }) {
+  const { settings } = useSettings();
+  const AGENT_COLORS: string[] = settings["graph.agentColors"] ?? ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
+  const MAIN_COLOR: string = settings["graph.mainColor"] ?? "#003864";
   const [selected, setSelected] = useState<Event | null>(null);
   const [visibleAgents, setVisibleAgents] = useState<Set<string | null>>(() => {
     const set = new Set<string | null>([null]);

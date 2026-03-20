@@ -3,9 +3,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import * as d3Force from "d3-force";
 import type { Agent, Event } from "../lib/types";
 import { formatTokens } from "../lib/utils";
-
-const AGENT_COLORS = ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
-const MAIN_COLOR = "#003864";
+import { useSettings } from "../contexts/SettingsContext";
 
 interface GraphNode {
   id: string;
@@ -42,6 +40,9 @@ interface Tooltip {
 }
 
 export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[] }) {
+  const { settings } = useSettings();
+  const AGENT_COLORS: string[] = settings["graph.agentColors"] ?? ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
+  const MAIN_COLOR: string = settings["graph.mainColor"] ?? "#003864";
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ width: 800, height: 1000 });
@@ -180,21 +181,31 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
 
     const simLinks = links.map((l) => ({ source: l.source, target: l.target }));
 
+    const linkDistance: number = settings["graph.linkDistance"] ?? 150;
+    const chargeStrength: number = settings["graph.chargeStrength"] ?? -300;
+    const collideRadius: number = settings["graph.collideRadius"] ?? 50;
+    const alphaDecay: number = settings["graph.alphaDecay"] ?? 0.05;
+    const continuous: boolean = settings["graph.continuousSimulation"] ?? false;
+
     const simulation = d3Force
       .forceSimulation(simNodes as any)
-      .force("link", d3Force.forceLink(simLinks).id((d: any) => d.id).distance(150))
-      .force("charge", d3Force.forceManyBody().strength(-300))
+      .force("link", d3Force.forceLink(simLinks).id((d: any) => d.id).distance(linkDistance))
+      .force("charge", d3Force.forceManyBody().strength(chargeStrength))
       .force("center", d3Force.forceCenter(size.width / 2, size.height / 2))
-      .force("collide", d3Force.forceCollide(50))
-      .alphaDecay(0.05);
+      .force("collide", d3Force.forceCollide(collideRadius))
+      .alphaDecay(alphaDecay);
 
-    simulation.on("end", () => {
-      const positions = new Map<string, { x: number; y: number }>();
-      for (const n of simNodes as any[]) {
-        positions.set(n.id, { x: n.x, y: n.y });
-      }
-      setNodePositions(positions);
-    });
+    if (continuous) {
+      simulation.alphaMin(0).alphaTarget(0.01);
+    } else {
+      simulation.on("end", () => {
+        const positions = new Map<string, { x: number; y: number }>();
+        for (const n of simNodes as any[]) {
+          positions.set(n.id, { x: n.x, y: n.y });
+        }
+        setNodePositions(positions);
+      });
+    }
 
     // Also update during tick for visual feedback
     let tickCount = 0;
@@ -338,15 +349,18 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
   // Compute link thickness
   const minEvents = Math.min(...links.map(l => l.eventCount));
   const maxEvents = Math.max(...links.map(l => l.eventCount));
+  const thicknessMin: number = settings["graph.linkThicknessMin"] ?? 1;
+  const thicknessMax: number = settings["graph.linkThicknessMax"] ?? 10;
   const linkThickness = (eventCount: number) => {
-    if (maxEvents === minEvents) return 3;
-    return 1 + ((eventCount - minEvents) / (maxEvents - minEvents)) * 9;
+    if (maxEvents === minEvents) return (thicknessMin + thicknessMax) / 2;
+    return thicknessMin + ((eventCount - minEvents) / (maxEvents - minEvents)) * (thicknessMax - thicknessMin);
   };
 
-  // Compute link opacity (dimming over 5 minutes)
+  // Compute link opacity (dimming over configurable minutes)
+  const opacityDecayMinutes: number = settings["graph.opacityDecayMinutes"] ?? 5;
   const linkOpacity = (lastActiveAt: number) => {
     const minutesSince = (now - lastActiveAt) / 60_000;
-    return Math.max(0.5, 1 - (minutesSince / 5) * 0.5);
+    return Math.max(0.5, 1 - (minutesSince / opacityDecayMinutes) * 0.5);
   };
 
   const nodeColor = (n: GraphNode) =>

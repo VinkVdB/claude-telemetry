@@ -31,7 +31,7 @@ describe("settings-defaults", () => {
     const defaults = getDefaults();
     expect(defaults["graph.linkDistance"]).toBe(150);
     expect(defaults["server.pollInterval"]).toBe(1000);
-    expect(defaults["display.maxLoadedEvents"]).toBe(500);
+    expect(defaults["display.maxLoadedEvents"]).toBe(2000);
   });
 
   test("validateSetting passes for valid number in range", () => {

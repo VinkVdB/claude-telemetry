@@ -14,6 +14,7 @@ interface AgentSummary {
   eventCount: number;
   totalTokens: number;
   lastActive: string | null;
+  model: string | null;
 }
 
 export function AgentTimeline({
@@ -82,6 +83,8 @@ export function AgentTimeline({
         ? mainEvents.reduce((latest, e) => (e.timestamp > latest.timestamp ? e : latest)).timestamp
         : null;
 
+    const mainModel = mainEvents.find((e) => e.model)?.model ?? null;
+
     const main: AgentSummary = {
       id: null,
       name: "main",
@@ -90,6 +93,7 @@ export function AgentTimeline({
       eventCount: mainEvents.length,
       totalTokens: mainTokens,
       lastActive: mainLastEvent,
+      model: mainModel,
     };
 
     const agentSummaries: AgentSummary[] = agents.map((agent, i) => {
@@ -100,6 +104,8 @@ export function AgentTimeline({
               .timestamp
           : agent.ended_at ?? agent.started_at ?? null;
 
+      const agentModel = agentEvents.find((e) => e.model)?.model ?? null;
+
       return {
         id: agent.id,
         name: agent.agent_type ?? "agent",
@@ -108,6 +114,7 @@ export function AgentTimeline({
         eventCount: agentEvents.length,
         totalTokens: agent.total_tokens,
         lastActive: lastEvent,
+        model: agentModel,
       };
     });
 
@@ -207,6 +214,9 @@ export function AgentTimeline({
                   style={{ backgroundColor: s.color }}
                 />
                 <span className="text-sm font-semibold text-primary-dark truncate">{s.name}</span>
+                {s.model && (
+                  <span className="text-xs text-muted font-mono ml-auto">{s.model}</span>
+                )}
               </div>
               {s.description && (
                 <p className="text-xs text-muted truncate" title={s.description}>

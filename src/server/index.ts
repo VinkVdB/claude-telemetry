@@ -14,6 +14,7 @@ import { createEventRoutes } from "./api/events";
 import { createAgentRoutes } from "./api/agents";
 import { createSseRoute } from "./api/sse";
 import { createOtelRoutes } from "./otel/receiver";
+import { createSettingsRoutes } from "./api/settings";
 
 const config = loadConfig();
 const db = getDb(`${config.dataDir}/db/telemetry.db`);
@@ -41,6 +42,7 @@ createSessionRoutes(app, db);
 createEventRoutes(app, db);
 createAgentRoutes(app, db);
 createSseRoute(app);
+createSettingsRoutes(app, db);
 if (config.otelEnabled) createOtelRoutes(app, db);
 
 // Serve SPA — Bun.file with explicit CWD-relative path.

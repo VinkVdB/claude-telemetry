@@ -177,6 +177,17 @@ export function AgentTimeline({
     });
   }, []);
 
+  const hideAll = useCallback(() => {
+    setVisibleAgents(new Set());
+  }, []);
+
+  const showAll = useCallback(() => {
+    const set = new Set<string | null>([null]);
+    agents.forEach((a) => set.add(a.id));
+    setVisibleAgents(set);
+  }, [agents]);
+
+
   // Auto-enable an agent when jumping to one of its events
   const autoEnableAgent = useCallback((agentId: string | null) => {
     setVisibleAgents((prev) => {
@@ -190,6 +201,23 @@ export function AgentTimeline({
   return (
     <div className="space-y-4">
       {/* Agent cards (toggleable filters) */}
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-semibold text-primary-dark">Agents</span>
+        <div className="flex gap-1.5">
+          <button
+            onClick={hideAll}
+            className="text-xs text-muted hover:text-primary-dark border border-border rounded px-2 py-0.5 hover:border-primary transition-colors"
+          >
+            Hide all
+          </button>
+          <button
+            onClick={showAll}
+            className="text-xs text-muted hover:text-primary-dark border border-border rounded px-2 py-0.5 hover:border-primary transition-colors"
+          >
+            Show all
+          </button>
+        </div>
+      </div>
       <div
         className="grid gap-3"
         style={{ gridTemplateColumns: `repeat(auto-fill, minmax(220px, 1fr))` }}

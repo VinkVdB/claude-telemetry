@@ -1,12 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SETTINGS_REGISTRY } from "@shared/settings-defaults";
-
-function InfoTip({ settingKey }: { settingKey: string }) {
-  const tip = SETTINGS_REGISTRY[settingKey]?.tooltip;
-  if (!tip) return null;
-  return <span className="text-muted cursor-help" title={tip}>&#9432;</span>;
-}
+import { Tooltip } from "../../components/ui/Tooltip";
 
 function NumberField({
   settingKey,
@@ -21,7 +16,7 @@ function NumberField({
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-sm text-muted flex items-center gap-1">
-        {settingKey.split(".").pop()} <InfoTip settingKey={settingKey} />
+        {settingKey.split(".").pop()} <Tooltip text={SETTINGS_REGISTRY[settingKey]?.tooltip} />
       </span>
       <input
         type="number"
@@ -112,7 +107,7 @@ export function GraphTab() {
       {/* Agent Colors */}
       <section>
         <h3 className="text-sm font-medium mb-2 flex items-center gap-1">
-          Agent Colors <InfoTip settingKey="graph.agentColors" />
+          Agent Colors <Tooltip text={SETTINGS_REGISTRY["graph.agentColors"]?.tooltip} />
         </h3>
         <div className="flex flex-wrap items-center gap-2">
           {colors.map((c, i) => (
@@ -151,7 +146,7 @@ export function GraphTab() {
       {/* Main Color */}
       <section>
         <h3 className="text-sm font-medium mb-2 flex items-center gap-1">
-          Main Session Color <InfoTip settingKey="graph.mainColor" />
+          Main Session Color <Tooltip text={SETTINGS_REGISTRY["graph.mainColor"]?.tooltip} />
         </h3>
         <div className="flex items-center gap-2">
           <ColorSwatch
@@ -182,7 +177,7 @@ export function GraphTab() {
             <div className={`w-4 h-4 rounded-full bg-white shadow mt-0.5 transition-transform ${local["graph.continuousSimulation"] ? "translate-x-5.5" : "translate-x-0.5"}`} />
           </div>
           <span className="text-sm">
-            Continuous Simulation <InfoTip settingKey="graph.continuousSimulation" />
+            Continuous Simulation <Tooltip text={SETTINGS_REGISTRY["graph.continuousSimulation"]?.tooltip} />
           </span>
         </label>
       </section>

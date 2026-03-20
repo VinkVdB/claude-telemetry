@@ -1,12 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SETTINGS_REGISTRY } from "@shared/settings-defaults";
-
-function InfoTip({ settingKey }: { settingKey: string }) {
-  const tip = SETTINGS_REGISTRY[settingKey]?.tooltip;
-  if (!tip) return null;
-  return <span className="text-muted cursor-help" title={tip}>&#9432;</span>;
-}
+import { Tooltip } from "../../components/ui/Tooltip";
 
 const serverKeys = ["server.pollInterval", "server.stabilityThreshold", "server.writePollInterval"] as const;
 
@@ -49,7 +44,7 @@ export function ServerTab() {
           return (
             <div key={key} className="flex justify-between items-center py-3 border-b border-border">
               <span className="font-bold text-primary-dark flex items-center gap-1">
-                {label} <InfoTip settingKey={key} />
+                {label} <Tooltip text={SETTINGS_REGISTRY[key]?.tooltip} />
               </span>
               <input
                 type="number"

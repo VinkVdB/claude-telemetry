@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SETTINGS_REGISTRY } from "@shared/settings-defaults";
+import { Tooltip } from "../../components/ui/Tooltip";
 
 interface ModelRates {
   inputPerMToken: number;
@@ -108,12 +109,7 @@ export function PricingTab() {
         <h2 className="text-lg font-medium flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-primary"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           Model Pricing Rates
-          <span
-            className="text-muted cursor-help"
-            title={SETTINGS_REGISTRY["pricing.models"]?.tooltip}
-          >
-            &#9432;
-          </span>
+          <Tooltip text={SETTINGS_REGISTRY["pricing.models"]?.tooltip} />
         </h2>
         <button
           onClick={() => { setAdding(true); setNewName(""); }}

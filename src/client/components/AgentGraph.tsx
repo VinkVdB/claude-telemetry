@@ -22,7 +22,7 @@ interface GraphNode {
 interface GraphLink {
   source: string;
   target: string;
-  eventCount: number;
+  tokens: number;
   lastActiveAt: number; // timestamp ms
   color: string;
 }
@@ -166,7 +166,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       links.push({
         source: sourceId,
         target: a.id,
-        eventCount: a.event_count || agentEvents.length,
+        tokens: a.total_tokens || (agentTokens.get(a.id) ?? 0),
         lastActiveAt: lastActive,
         color,
       });
@@ -399,22 +399,34 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
   // Compute radius for a node
   const radius = (tokens: number) => 16 + Math.min((tokens / maxTokens) * 24, 24);
 
-  // Compute link thickness
-  const minEvents = Math.min(...links.map(l => l.eventCount));
-  const maxEvents = Math.max(...links.map(l => l.eventCount));
+  // Compute link thickness based on tokens
+  const minTokens = Math.min(...links.map(l => l.tokens));
+  const maxTokens2 = Math.max(...links.map(l => l.tokens));
   const thicknessMin: number = settings["graph.linkThicknessMin"] ?? 1;
   const thicknessMax: number = settings["graph.linkThicknessMax"] ?? 10;
-  const linkThickness = (eventCount: number) => {
-    if (maxEvents === minEvents) return (thicknessMin + thicknessMax) / 2;
-    return thicknessMin + ((eventCount - minEvents) / (maxEvents - minEvents)) * (thicknessMax - thicknessMin);
+  const linkThickness = (tokens: number) => {
+    if (maxTokens2 === minTokens) return (thicknessMin + thicknessMax) / 2;
+    return thicknessMin + ((tokens - minTokens) / (maxTokens2 - minTokens)) * (thicknessMax - thicknessMin);
   };
 
-  // Compute link opacity (dimming over configurable minutes)
-  const opacityDecayMinutes: number = settings["graph.opacityDecayMinutes"] ?? 5;
-  const linkOpacity = (lastActiveAt: number) => {
+  // Compute link color fade (desaturate toward gray over configurable minutes)
+  const opacityDecayMinutes: number = settings["graph.opacityDecayMinutes"] ?? 1;
+  const linkFade = (lastActiveAt: number) => {
     const minutesSince = (now - lastActiveAt) / 60_000;
-    return Math.max(0.5, 1 - (minutesSince / opacityDecayMinutes) * 0.5);
+    return Math.max(0.3, 1 - (minutesSince / opacityDecayMinutes) * 0.7);
   };
+
+  const interpolateToGray = (hex: string, factor: number): string => {
+    const gray = [148, 163, 184]; // #94a3b8
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return hex;
+    return `rgb(${Math.round(r * factor + gray[0] * (1 - factor))},${Math.round(g * factor + gray[1] * (1 - factor))},${Math.round(b * factor + gray[2] * (1 - factor))})`;
+  };
+
+  const fadedColor = (color: string, lastActiveAt: number) =>
+    interpolateToGray(color, linkFade(lastActiveAt));
 
   const nodeColor = (n: GraphNode) =>
     n.colorIndex === -1 ? MAIN_COLOR : AGENT_COLORS[n.colorIndex % AGENT_COLORS.length];
@@ -445,13 +457,14 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
                 key={markerId}
                 id={markerId}
                 viewBox="0 0 10 6"
-                refX="10"
+                refX="0"
                 refY="3"
-                markerWidth="8"
-                markerHeight="6"
-                orient="auto-start-reverse"
+                markerUnits="userSpaceOnUse"
+                markerWidth={Math.max(8, linkThickness(link.tokens) * 2)}
+                markerHeight={Math.max(8, linkThickness(link.tokens) * 2) * 0.6}
+                orient="auto"
               >
-                <path d="M 0 0 L 10 3 L 0 6 Z" fill={link.color} opacity={linkOpacity(link.lastActiveAt)} />
+                <path d="M 0 0 L 10 3 L 0 6 Z" fill={fadedColor(link.color, link.lastActiveAt)} />
               </marker>
             );
           })}
@@ -475,8 +488,10 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
             if (dist === 0) return null;
             const nx = dx / dist;
             const ny = dy / dist;
-            // Pull line back: circle radius + arrow marker length (8px at current scale)
-            const markerLen = 8;
+            // markerUnits="userSpaceOnUse" + refX="0": tip protrudes markerWidth px
+            // beyond the line endpoint. markerWidth = max(8, thickness*2).
+            const thickness = linkThickness(link.tokens);
+            const markerLen = Math.max(8, thickness * 2);
 
             return (
               <line
@@ -485,9 +500,8 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
                 y1={sourcePos.y + ny * rSource}
                 x2={targetPos.x - nx * (rTarget + markerLen)}
                 y2={targetPos.y - ny * (rTarget + markerLen)}
-                stroke={link.color}
-                strokeWidth={linkThickness(link.eventCount)}
-                strokeOpacity={linkOpacity(link.lastActiveAt)}
+                stroke={fadedColor(link.color, link.lastActiveAt)}
+                strokeWidth={linkThickness(link.tokens)}
                 markerEnd={`url(#arrow-${link.source}-${link.target})`}
               />
             );

@@ -76,7 +76,7 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
         ? Math.min(new Date(nextEvent.timestamp).getTime() - new Date(e.timestamp).getTime(), 30000)
         : 2000);
       const lane = agentLanes.get(e.agent_id) ?? 0;
-      const color = AGENT_COLORS[lane % AGENT_COLORS.length];
+      const color = lane === 0 ? settings["graph.mainColor"] ?? "#ff26f8" : AGENT_COLORS[lane % AGENT_COLORS.length];
 
       return {
         event: e,
@@ -94,7 +94,7 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
   if (spans.length === 0) return <p className="text-muted text-sm">No trace data available.</p>;
 
   const laneCount = Math.max(...spans.map((s) => s.lane)) + 1;
-  const svgHeight = laneCount * (ROW_HEIGHT + 8) + 40;
+  const svgHeight = laneCount * (ROW_HEIGHT + 2) + 40;
 
   return (
     <div ref={containerRef} className="overflow-x-auto">
@@ -121,7 +121,7 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
             <text
               key={lane}
               x={LABEL_WIDTH - 8}
-              y={lane * (ROW_HEIGHT + 8) + ROW_HEIGHT / 2 + 16}
+              y={lane * (ROW_HEIGHT + 2) + ROW_HEIGHT / 2 + 16}
               fill="#003864"
               fontSize={12}
               fontWeight={500}
@@ -136,7 +136,7 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
         {spans.map((span) => {
           const x = LABEL_WIDTH + (span.startMs / totalMs) * timelineWidth;
           const width = Math.max(((span.endMs - span.startMs) / totalMs) * timelineWidth, MIN_SPAN_WIDTH);
-          const y = span.lane * (ROW_HEIGHT + 8) + 8;
+          const y = span.lane * (ROW_HEIGHT + 2) + 2;
 
           return (
             <g

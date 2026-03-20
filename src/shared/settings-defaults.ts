@@ -64,7 +64,7 @@ export const SETTINGS_REGISTRY: Record<string, SettingDefinition> = {
   },
   "graph.mainColor": {
     type: "string",
-    defaultValue: "#003864",
+    defaultValue: "#ff26f8",
     tooltip: "Color for the main session node — the central hub that spawns agents.",
     validate: hexColorValidator,
   },
@@ -114,11 +114,11 @@ export const SETTINGS_REGISTRY: Record<string, SettingDefinition> = {
     tooltip: "How often to check whether a file has finished writing (ms). Used during the stability wait period.",
   },
   "display.maxLoadedEvents": {
-    type: "number", defaultValue: 500, min: 50, max: 5000,
+    type: "number", defaultValue: 2000, min: 50, max: 50000,
     tooltip: "Maximum events held in memory while scrolling. When this limit is exceeded, the oldest events are trimmed from the buffer to free memory. Higher values let you scroll further without reloading, but use more browser memory.",
   },
   "display.jumpStepSize": {
-    type: "number", defaultValue: 50, min: 10, max: 500,
+    type: "number", defaultValue: 50, min: 10, max: 2000,
     tooltip: "Number of events to skip when clicking the +/- navigation buttons in the event table.",
   },
   "display.costPrecisionThreshold": {

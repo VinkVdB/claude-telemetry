@@ -55,7 +55,7 @@ Stored as a single JSON object under key `pricing.models`.
 - Users can edit rates for existing models, add new models (free-text model name + 4 rates), or remove models.
 - All rate values must be >= 0.
 - Model names must be non-empty strings, no duplicates.
-- Changes apply to cost calculations for new events only. Existing events retain their computed costs.
+- Changes apply to cost calculations for new events immediately (no restart needed). The server re-reads pricing from the DB on each `calculateCost()` call via a cached lookup that invalidates on `PUT /api/settings`. Existing events retain their computed costs.
 - **Tooltip (section)**: "USD per 1M tokens. Changes apply to new events only — existing costs are not recalculated."
 - **Tooltip (+ Add Model)**: "Add pricing for a model not listed here. Use the exact model ID from Claude API (e.g. claude-opus-4-6). Date suffixes like -20260301 are stripped automatically during lookup."
 
@@ -150,12 +150,16 @@ Components currently reading hardcoded constants switch to `useSettings()`:
 | `useInfiniteEvents.ts` | `MAX_LOADED_EVENTS = 500` | `settings.display.maxLoadedEvents` |
 | `utils.ts` | hardcoded thresholds in `formatTokens`, `formatCost`, `timeAgo` | Accept thresholds as params, sourced from settings |
 | `CostBreakdownPanel.tsx` | `getModelPricing()` from shared | Uses settings-aware pricing |
-| `processor.ts` (server) | `calculateCost()` from shared pricing | Reads pricing from settings DB on startup |
-| `watcher.ts` (server) | `config.pollInterval`, chokidar options | Reads from settings DB, falls back to env vars |
+| `processor.ts` (server) | `calculateCost()` from shared pricing | Uses cached pricing that auto-invalidates on settings change |
+| `watcher.ts` (server) | `config.pollInterval`, chokidar options | Reads from settings DB on startup, falls back to env vars. Env vars override DB values when set. |
 
 ### Pricing integration
 
-The shared `pricing.ts` module gets a `loadPricingFromSettings(db)` function called on server startup. It merges DB-stored custom pricing over the hardcoded defaults and calls `setPricing()` to update the in-memory `PRICING` object. The frontend reads pricing via `GET /api/settings` and uses it in `CostBreakdownPanel`.
+The shared `pricing.ts` module gets a `loadPricingFromSettings(db)` function called on server startup. It merges DB-stored custom pricing over the hardcoded defaults and caches the result in memory. The `PUT /api/settings` handler invalidates this cache when pricing keys change, so the next `calculateCost()` call re-reads from DB. This means pricing changes apply live to new events without a restart.
+
+**Precedence for server settings**: env vars > DB settings > hardcoded defaults. When `CT_POLL_INTERVAL` is set as an env var, it takes precedence over the DB value. The settings UI shows the effective value and a note when an env var override is active.
+
+The frontend reads pricing via `GET /api/settings` and uses it in `CostBreakdownPanel`.
 
 ### Settings page
 

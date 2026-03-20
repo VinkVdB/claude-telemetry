@@ -7,6 +7,8 @@ export interface UseInfiniteEventsOptions {
   filters: Record<string, string>;
   /** Page size */
   pageSize?: number;
+  /** Maximum events held in memory (oldest trimmed when exceeded) */
+  maxLoadedEvents?: number;
 }
 
 export interface UseInfiniteEventsResult {
@@ -31,12 +33,10 @@ export interface UseInfiniteEventsResult {
   jumpTargetEventId: string | null;
 }
 
-const MAX_LOADED_EVENTS = 500;
-
 export function useInfiniteEvents(
   options: UseInfiniteEventsOptions
 ): UseInfiniteEventsResult {
-  const { filters, pageSize = 100 } = options;
+  const { filters, pageSize = 100, maxLoadedEvents = 500 } = options;
 
   const [events, setEvents] = useState<Event[]>([]);
   const [total, setTotal] = useState(0);
@@ -86,8 +86,8 @@ export function useInfiniteEvents(
           setEvents((prev) => {
             const combined = [...prev, ...result.events];
             // Trim from the front if we exceed max loaded
-            if (combined.length > MAX_LOADED_EVENTS) {
-              const trimCount = combined.length - MAX_LOADED_EVENTS;
+            if (combined.length > maxLoadedEvents) {
+              const trimCount = combined.length - maxLoadedEvents;
               baseOffsetRef.current += trimCount;
               return combined.slice(trimCount);
             }
@@ -97,8 +97,8 @@ export function useInfiniteEvents(
           setEvents((prev) => {
             const combined = [...result.events, ...prev];
             // Trim from the back if we exceed max loaded
-            if (combined.length > MAX_LOADED_EVENTS) {
-              return combined.slice(0, MAX_LOADED_EVENTS);
+            if (combined.length > maxLoadedEvents) {
+              return combined.slice(0, maxLoadedEvents);
             }
             return combined;
           });

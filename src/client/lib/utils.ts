@@ -1,13 +1,25 @@
-export function formatTokens(n: number | null | undefined): string {
+export interface FormatOptions {
+  kThreshold?: number;
+  mThreshold?: number;
+  costPrecisionThreshold?: number;
+  timeAgoJustNow?: number;
+  timeAgoMinutes?: number;
+  timeAgoHours?: number;
+}
+
+export function formatTokens(n: number | null | undefined, opts?: FormatOptions): string {
   if (n == null) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  const mThreshold = opts?.mThreshold ?? 1_000_000;
+  const kThreshold = opts?.kThreshold ?? 1_000;
+  if (n >= mThreshold) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= kThreshold) return `${(n / 1_000).toFixed(1)}K`;
   return n.toString();
 }
 
-export function formatCost(usd: number | null | undefined): string {
+export function formatCost(usd: number | null | undefined, opts?: FormatOptions): string {
   if (usd == null) return "—";
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  const threshold = opts?.costPrecisionThreshold ?? 0.01;
+  if (usd < threshold) return `$${usd.toFixed(4)}`;
   return `$${usd.toFixed(2)}`;
 }
 
@@ -19,15 +31,20 @@ export function formatDuration(ms: number): string {
   return `${mins}m ${secs}s`;
 }
 
-export function timeAgo(dateStr: string): string {
+export function timeAgo(dateStr: string, opts?: FormatOptions): string {
+  const justNowSec = opts?.timeAgoJustNow ?? 60;
+  const minutesThreshold = opts?.timeAgoMinutes ?? 60;
+  const hoursThreshold = opts?.timeAgoHours ?? 24;
+
   // Normalize SQLite datetime('now') format "2026-03-18 21:23:31" → ISO with Z
   const normalized = dateStr.includes("T") ? dateStr : dateStr.replace(" ", "T") + "Z";
   const diff = Date.now() - new Date(normalized).getTime();
+  const secs = Math.floor(diff / 1000);
+  if (secs < justNowSec) return "just now";
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < minutesThreshold) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < hoursThreshold) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }

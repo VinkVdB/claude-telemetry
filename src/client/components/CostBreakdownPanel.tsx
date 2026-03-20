@@ -1,7 +1,8 @@
 // src/client/components/CostBreakdownPanel.tsx
 import { formatTokens, formatCost } from "../lib/utils";
+import { useSettings } from "../contexts/SettingsContext";
 import type { CostBreakdown } from "../lib/types";
-import { getModelPricing, type ModelPricing } from "@shared/pricing";
+import type { ModelPricing } from "@shared/pricing";
 
 function tokenCost(tokens: number, ratePerMToken: number): number {
   return (tokens / 1_000_000) * ratePerMToken;
@@ -24,6 +25,13 @@ export function CostBreakdownPanel({
   totalCost,
   perModel,
 }: CostBreakdownPanelProps) {
+  const { settings } = useSettings();
+  const pricingModels = settings["pricing.models"] ?? {};
+  const getSettingsPricing = (model: string): ModelPricing | null => {
+    if (pricingModels[model]) return pricingModels[model];
+    const base = model.replace(/-\d{8}$/, "");
+    return pricingModels[base] ?? null;
+  };
   const totalTokens = totalInputTokens + totalOutputTokens + totalCacheRead + totalCacheCreation;
 
   return (
@@ -43,19 +51,19 @@ export function CostBreakdownPanel({
       {/* Token breakdown */}
       {(() => {
         const inputCost = perModel?.reduce((sum, m) => {
-          const p = getModelPricing(m.model);
+          const p = getSettingsPricing(m.model);
           return sum + (p ? tokenCost(m.input_tokens, p.inputPerMToken) : 0);
         }, 0) ?? 0;
         const outputCost = perModel?.reduce((sum, m) => {
-          const p = getModelPricing(m.model);
+          const p = getSettingsPricing(m.model);
           return sum + (p ? tokenCost(m.output_tokens, p.outputPerMToken) : 0);
         }, 0) ?? 0;
         const cacheReadCost = perModel?.reduce((sum, m) => {
-          const p = getModelPricing(m.model);
+          const p = getSettingsPricing(m.model);
           return sum + (p ? tokenCost(m.cache_read_tokens, p.cacheReadPerMToken) : 0);
         }, 0) ?? 0;
         const cacheWriteCost = perModel?.reduce((sum, m) => {
-          const p = getModelPricing(m.model);
+          const p = getSettingsPricing(m.model);
           return sum + (p ? tokenCost(m.cache_creation_tokens, p.cacheWritePerMToken) : 0);
         }, 0) ?? 0;
         return (
@@ -76,7 +84,7 @@ export function CostBreakdownPanel({
           </summary>
           <div className="mt-3 space-y-3">
             {perModel.map((m) => (
-              <ModelCard key={m.model} data={m} />
+              <ModelCard key={m.model} data={m} getPricing={getSettingsPricing} />
             ))}
           </div>
         </details>
@@ -97,8 +105,8 @@ function TokenStat({ label, tokens, cost }: { label: string; tokens: number; cos
   );
 }
 
-function ModelCard({ data }: { data: CostBreakdown }) {
-  const pricing = getModelPricing(data.model);
+function ModelCard({ data, getPricing }: { data: CostBreakdown; getPricing: (model: string) => ModelPricing | null }) {
+  const pricing = getPricing(data.model);
   const modelLabel = data.model
     .replace("claude-", "")
     .replace(/-\d{8}$/, "")

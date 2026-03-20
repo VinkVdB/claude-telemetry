@@ -1,5 +1,6 @@
 import { useRef, useCallback, useState, useEffect } from "react";
 import { formatTokens, formatCost, timeAgo, cn } from "../lib/utils";
+import { useSettings } from "../contexts/SettingsContext";
 import type { Event } from "../lib/types";
 
 export interface EventTableProps {
@@ -101,6 +102,8 @@ export function EventTable({
   nameMap,
   onAutoEnableAgent,
 }: EventTableProps) {
+  const { settings } = useSettings();
+  const jumpStep = settings["display.jumpStepSize"] ?? 50;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [jumpInput, setJumpInput] = useState("");
   const prevScrollHeightRef = useRef(0);
@@ -359,11 +362,11 @@ export function EventTable({
         <div className="flex items-center gap-2">
           <button
             disabled={offset <= 0}
-            onClick={() => onJumpTo(Math.min(total, (maxVisible) + 50))}
+            onClick={() => onJumpTo(Math.min(total, (maxVisible) + jumpStep))}
             className="px-2.5 py-1 border border-border rounded-lg disabled:opacity-30 hover:border-primary text-xs font-medium"
-            title="Jump 50 events newer"
+            title={`Jump ${jumpStep} events newer`}
           >
-            +50
+            +{jumpStep}
           </button>
           <input
             type="number"
@@ -379,11 +382,11 @@ export function EventTable({
           />
           <button
             disabled={!hasMore}
-            onClick={() => onJumpTo(Math.max(1, (minVisible) - 50))}
+            onClick={() => onJumpTo(Math.max(1, (minVisible) - jumpStep))}
             className="px-2.5 py-1 border border-border rounded-lg disabled:opacity-30 hover:border-primary text-xs font-medium"
-            title="Jump 50 events older"
+            title={`Jump ${jumpStep} events older`}
           >
-            -50
+            -{jumpStep}
           </button>
           <button
             onClick={handleScrollToTop}

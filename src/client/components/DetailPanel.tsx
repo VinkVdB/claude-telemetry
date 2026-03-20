@@ -61,7 +61,7 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
                 </p>
               </div>
               <div>
-                <span className="text-muted text-xs">Cache creation</span>
+                <span className="text-muted text-xs">Cache write</span>
                 <p className="font-semibold text-primary-dark">
                   {formatTokens(event.cache_creation_tokens)}
                   {event.model && event.cache_creation_tokens != null && (

@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { SessionTable } from "../components/SessionTable";
 import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
+import { useSSE } from "../lib/sse";
 import type { Project, Session, CostBreakdown } from "../lib/types";
 
 export function ProjectDetailPage() {
@@ -12,12 +13,20 @@ export function ProjectDetailPage() {
   const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
     if (!id) return;
     api.projects.get(id).then(setProject).catch((e) => setError(String(e)));
     api.sessions.list(id).then(setSessions).catch((e) => setError(String(e)));
     api.projects.costs(id).then(setCosts).catch(() => setCosts([]));
   }, [id]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  useSSE((event) => {
+    if (event === "event" || event === "session_new") {
+      fetchData();
+    }
+  });
 
   if (error) return <p className="text-red-500 p-4">{error}</p>;
   if (!project) return <p className="text-muted animate-pulse">Loading...</p>;

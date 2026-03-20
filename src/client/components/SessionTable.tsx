@@ -11,6 +11,7 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
             <th className="px-4 py-3 font-medium">Session</th>
             <th className="px-4 py-3 font-medium">Branch</th>
             <th className="px-4 py-3 font-medium">Started</th>
+            <th className="px-4 py-3 font-medium">Last Updated</th>
             <th className="px-4 py-3 font-medium text-right">Events</th>
             <th className="px-4 py-3 font-medium text-right">Agents</th>
             <th className="px-4 py-3 font-medium text-right">Tokens</th>
@@ -39,6 +40,7 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
                 </td>
                 <td className="px-4 py-3 text-muted">{s.git_branch ?? "—"}</td>
                 <td className="px-4 py-3 text-muted">{s.started_at ? timeAgo(s.started_at) : "—"}</td>
+                <td className="px-4 py-3 text-muted">{s.last_updated ? timeAgo(s.last_updated) : "—"}</td>
                 <td className="px-4 py-3 text-right">{s.event_count}</td>
                 <td className="px-4 py-3 text-right">{s.agent_count}</td>
                 <td className="px-4 py-3 text-right font-mono">{formatTokens(totalTokens)}</td>

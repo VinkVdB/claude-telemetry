@@ -28,6 +28,7 @@ export interface Session {
   git_branch: string | null;
   started_at: string;
   ended_at: string | null;
+  last_updated: string | null;
   slug: string | null;
   total_input_tokens: number;
   total_output_tokens: number;

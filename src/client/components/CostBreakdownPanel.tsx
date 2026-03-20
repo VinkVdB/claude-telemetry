@@ -45,7 +45,7 @@ export function CostBreakdownPanel({
         <TokenStat label="Input" tokens={totalInputTokens} />
         <TokenStat label="Output" tokens={totalOutputTokens} />
         <TokenStat label="Cache read" tokens={totalCacheRead} />
-        <TokenStat label="Cache creation" tokens={totalCacheCreation} />
+        <TokenStat label="Cache write" tokens={totalCacheCreation} />
       </div>
 
       {/* Per-model breakdown */}

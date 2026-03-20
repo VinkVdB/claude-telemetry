@@ -19,6 +19,7 @@ export function SessionDetailPage() {
   const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [tab, setTab] = useState<Tab>("agents");
   const [live, setLive] = useState(false);
+  const [refreshSignal, setRefreshSignal] = useState(0);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -40,6 +41,7 @@ export function SessionDetailPage() {
   useSSE((event, data) => {
     if (event === "event" && data.sessionId === id) {
       fetchData();
+      setRefreshSignal(s => s + 1);
     }
   });
 
@@ -105,7 +107,7 @@ export function SessionDetailPage() {
         ))}
       </div>
 
-      {tab === "agents" && <AgentTimeline agents={agents} events={events} />}
+      {tab === "agents" && <AgentTimeline agents={agents} events={events} sessionId={id!} refreshSignal={refreshSignal} />}
       {tab === "graph-trace" && (
         <div className="space-y-6">
           <TraceView events={events} agents={agents} />

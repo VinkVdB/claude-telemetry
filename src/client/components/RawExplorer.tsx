@@ -1,63 +1,78 @@
 // src/client/components/RawExplorer.tsx
-import { useState, useEffect } from "react";
-import { api } from "../lib/api";
+import { useState, useMemo } from "react";
+import { useInfiniteEvents } from "../hooks/useInfiniteEvents";
+import { useSSE } from "../lib/sse";
+import { EventTable } from "./EventTable";
 import { DetailPanel } from "./DetailPanel";
-import { formatTokens, formatCost, cn } from "../lib/utils";
 import type { Event } from "../lib/types";
 
 export function RawExplorer() {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<Event | null>(null);
-  const [filters, setFilters] = useState({
-    sessionId: "",
+  const [filters, setFilters] = useState<Record<string, string>>({
     type: "",
     model: "",
-    toolName: "",
-    limit: "100",
-    offset: "0",
   });
   const [search, setSearch] = useState("");
-  const [pageInput, setPageInput] = useState("");
 
-  useEffect(() => {
-    const params: Record<string, string> = {};
-    Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v; });
-    api.events.list(params).then((r) => {
-      setEvents(r.events);
-      setTotal(r.total);
+  // Build API filters (only include non-empty values)
+  const apiFilters = useMemo(() => {
+    const result: Record<string, string> = {};
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v) result[k] = v;
     });
+    return result;
   }, [filters]);
 
-  const filteredEvents = search
-    ? events.filter((e) => e.raw?.toLowerCase().includes(search.toLowerCase()))
-    : events;
+  const {
+    events,
+    total,
+    isLoading,
+    loadMore,
+    loadPrevious,
+    jumpTo,
+    scrollToTop,
+    offset,
+    hasMore,
+    hasPrevious,
+    jumpTargetEventId,
+  } = useInfiniteEvents({ filters: apiFilters, pageSize: 100 });
 
-  const page = parseInt(filters.offset) / parseInt(filters.limit) + 1;
-  const totalPages = Math.ceil(total / parseInt(filters.limit));
-
-  function goToPage(p: number) {
-    const clamped = Math.max(1, Math.min(p, totalPages));
-    setFilters((f) => ({ ...f, offset: String((clamped - 1) * parseInt(f.limit)) }));
-  }
-
-  function formatTimestamp(ts: string) {
-    const d = new Date(ts);
-    return d.toLocaleString(undefined, {
-      month: "short", day: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
+  // Stable event number map from unfiltered data
+  const eventNumberMap = useMemo(() => {
+    const map = new Map<string, number>();
+    events.forEach((e, i) => {
+      map.set(e.id, total - offset - i);
     });
-  }
+    return map;
+  }, [events, total, offset]);
+
+  // Client-side search filter on loaded events
+  const filteredEvents = useMemo(
+    () =>
+      search
+        ? events.filter((e) =>
+            e.raw?.toLowerCase().includes(search.toLowerCase())
+          )
+        : events,
+    [events, search]
+  );
+
+  // SSE: scroll to top on new events
+  useSSE((_eventName) => {
+    scrollToTop();
+  });
 
   return (
     <div className="flex gap-4 items-start">
-      {/* Left: filters + table + pagination */}
-      <div className="w-1/2 min-w-0">
+      {/* Left: filters + EventTable */}
+      <div className="flex-[3] min-w-0">
         {/* Filters */}
         <div className="flex gap-3 mb-4 flex-wrap">
           <select
             value={filters.type}
-            onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value, offset: "0" }))}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, type: e.target.value }))
+            }
             className="border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
           >
             <option value="">All types</option>
@@ -68,7 +83,9 @@ export function RawExplorer() {
           </select>
           <select
             value={filters.model}
-            onChange={(e) => setFilters((f) => ({ ...f, model: e.target.value, offset: "0" }))}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, model: e.target.value }))
+            }
             className="border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
           >
             <option value="">All models</option>
@@ -85,92 +102,26 @@ export function RawExplorer() {
           />
         </div>
 
-        {/* Table */}
-        <div className="border border-border rounded-xl overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-surface text-muted text-left">
-                <th className="px-3 py-2 font-medium">Time</th>
-                <th className="px-3 py-2 font-medium">Type</th>
-                <th className="px-3 py-2 font-medium">Model</th>
-                <th className="px-3 py-2 font-medium">Tool</th>
-                <th className="px-3 py-2 font-medium text-right">In</th>
-                <th className="px-3 py-2 font-medium text-right">Out</th>
-                <th className="px-3 py-2 font-medium text-right">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEvents.map((e) => (
-                <tr
-                  key={e.id}
-                  onClick={() => setSelected(e)}
-                  className={cn(
-                    "border-t border-border hover:bg-primary/5 cursor-pointer transition-colors",
-                    selected?.id === e.id ? "bg-primary/10" : ""
-                  )}
-                >
-                  <td className="px-3 py-2 font-mono text-muted whitespace-nowrap">{formatTimestamp(e.timestamp)}</td>
-                  <td className="px-3 py-2">
-                    <span className={cn(
-                      "px-1.5 py-0.5 rounded text-[10px] font-medium",
-                      e.type === "assistant" ? "bg-primary/10 text-primary" :
-                      e.type === "user" ? "bg-accent/20 text-primary-dark" :
-                      "bg-surface text-muted"
-                    )}>
-                      {e.type}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-muted">{e.model?.replace("claude-", "") ?? "—"}</td>
-                  <td className="px-3 py-2 font-mono text-primary">{e.tool_name ?? "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono">{e.input_tokens != null ? formatTokens(e.input_tokens) : "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono">{e.output_tokens != null ? formatTokens(e.output_tokens) : "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono">{e.cost_usd != null ? formatCost(e.cost_usd) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        <div className="flex items-center justify-between mt-3 text-sm text-muted">
-          <span>{total} events total</span>
-          <div className="flex items-center gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => goToPage(page - 1)}
-              className="px-3 py-1 border border-border rounded-lg disabled:opacity-30 hover:border-primary"
-            >
-              Prev
-            </button>
-            <span className="px-2">Page {page} of {totalPages}</span>
-            <input
-              type="number"
-              min={1}
-              max={totalPages}
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  goToPage(parseInt(pageInput));
-                  setPageInput("");
-                }
-              }}
-              placeholder="Go to…"
-              className="w-20 border border-border rounded-lg px-2 py-1 text-sm text-center"
-            />
-            <button
-              disabled={page >= totalPages}
-              onClick={() => goToPage(page + 1)}
-              className="px-3 py-1 border border-border rounded-lg disabled:opacity-30 hover:border-primary"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <EventTable
+          events={filteredEvents}
+          total={total}
+          isLoading={isLoading}
+          onLoadMore={loadMore}
+          onLoadPrevious={loadPrevious}
+          offset={offset}
+          hasMore={hasMore}
+          hasPrevious={hasPrevious}
+          onJumpTo={jumpTo}
+          onScrollToTop={scrollToTop}
+          selected={selected}
+          onSelect={setSelected}
+          eventNumberMap={eventNumberMap}
+          jumpTargetEventId={jumpTargetEventId}
+        />
       </div>
 
       {/* Right: detail panel */}
-      <div className="w-1/2 min-w-0 sticky top-4">
+      <div className="flex-[2] min-w-0 sticky top-4">
         {selected ? (
           <DetailPanel event={selected} onClose={() => setSelected(null)} />
         ) : (

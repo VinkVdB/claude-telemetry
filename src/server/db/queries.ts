@@ -161,7 +161,8 @@ export function listSessions(db: Database, projectId: string) {
   return db.query(`
     SELECT s.*,
       (SELECT COUNT(*) FROM agents WHERE session_id = s.id) as agent_count,
-      (SELECT COUNT(*) FROM events WHERE session_id = s.id) as event_count
+      (SELECT COUNT(*) FROM events WHERE session_id = s.id) as event_count,
+      (SELECT MAX(timestamp) FROM events WHERE session_id = s.id) as last_updated
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY s.started_at DESC

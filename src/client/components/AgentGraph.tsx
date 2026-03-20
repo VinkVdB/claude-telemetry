@@ -44,7 +44,7 @@ interface Tooltip {
 export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [size, setSize] = useState({ width: 800, height: 500 });
+  const [size, setSize] = useState({ width: 800, height: 1000 });
   const [nodePositions, setNodePositions] = useState<Map<string, { x: number; y: number }>>(new Map());
   const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 });
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
@@ -61,12 +61,12 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
-      setSize({ width: Math.max(width, 300), height: Math.max(height, 500) });
+      setSize({ width: Math.max(width, 300), height: Math.max(height, 1000) });
     });
     ro.observe(el);
     // Initial measurement
     const rect = el.getBoundingClientRect();
-    setSize({ width: Math.max(rect.width, 300), height: Math.max(rect.height, 500) });
+    setSize({ width: Math.max(rect.width, 300), height: Math.max(rect.height, 1000) });
     return () => ro.disconnect();
   }, []);
 
@@ -212,26 +212,31 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
     return () => { simulation.stop(); };
   }, [nodes.length, links.length, size.width, size.height]); // Only re-run on structural changes
 
-  // Zoom handler
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    setTransform((prev) => {
-      const newScale = Math.min(5, Math.max(0.2, prev.scale * scaleFactor));
-      // Zoom toward cursor position
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return { ...prev, scale: newScale };
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
-      const dx = cx - prev.x;
-      const dy = cy - prev.y;
-      const ratio = newScale / prev.scale;
-      return {
-        x: cx - dx * ratio,
-        y: cy - dy * ratio,
-        scale: newScale,
-      };
-    });
+  // Zoom handler — attached directly to DOM for non-passive event handling
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      setTransform((prev) => {
+        const newScale = Math.min(5, Math.max(0.2, prev.scale * scaleFactor));
+        const rect = el.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        const dx = cx - prev.x;
+        const dy = cy - prev.y;
+        const ratio = newScale / prev.scale;
+        return {
+          x: cx - dx * ratio,
+          y: cy - dy * ratio,
+          scale: newScale,
+        };
+      });
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
   }, []);
 
   // Pan handlers
@@ -248,7 +253,8 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     // Handle node drag
-    if (dragRef.current) {
+    const drag = dragRef.current;
+    if (drag) {
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect) return;
       const t = transformRef.current;
@@ -256,9 +262,9 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       const svgY = (e.clientY - rect.top - t.y) / t.scale;
       setNodePositions((prev) => {
         const next = new Map(prev);
-        next.set(dragRef.current!.nodeId, {
-          x: svgX - dragRef.current!.offsetX,
-          y: svgY - dragRef.current!.offsetY,
+        next.set(drag.nodeId, {
+          x: svgX - drag.offsetX,
+          y: svgY - drag.offsetY,
         });
         return next;
       });
@@ -330,7 +336,12 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
   const radius = (tokens: number) => 16 + Math.min((tokens / maxTokens) * 24, 24);
 
   // Compute link thickness
-  const linkThickness = (eventCount: number) => Math.min(2 + Math.log2(eventCount + 1) * 1.5, 10);
+  const minEvents = Math.min(...links.map(l => l.eventCount));
+  const maxEvents = Math.max(...links.map(l => l.eventCount));
+  const linkThickness = (eventCount: number) => {
+    if (maxEvents === minEvents) return 3;
+    return 1 + ((eventCount - minEvents) / (maxEvents - minEvents)) * 9;
+  };
 
   // Compute link opacity (dimming over 5 minutes)
   const linkOpacity = (lastActiveAt: number) => {
@@ -345,14 +356,13 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
     <div
       ref={containerRef}
       className="relative border border-border rounded-xl bg-white overflow-hidden"
-      style={{ minHeight: 500 }}
+      style={{ minHeight: 1000 }}
     >
       <svg
         ref={svgRef}
         width={size.width}
         height={size.height}
         className="block"
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

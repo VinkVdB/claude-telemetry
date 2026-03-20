@@ -11,6 +11,7 @@ A lightweight, local-first monitoring dashboard for [Claude Code](https://claude
 - **Traces** — Jaeger-style span view of tool calls within a session
 - **Agent graph** — D3 force graph of subagent relationships
 - **Raw explorer** — filterable, searchable event log with full JSON drill-down
+- **Settings** — configure model pricing, graph appearance, display preferences, and watcher behaviour from the UI
 
 ## How it works
 
@@ -97,16 +98,31 @@ bun scripts/seed.ts
 
 ## Configuration
 
-All config is via environment variables (copy `.env.example` to `.env`):
+Most settings are configurable live from the **Settings page** (`/settings`) without restarting the container. Changes are stored in the SQLite database and take effect immediately for display and pricing settings. Server-side watcher settings require a restart.
+
+### Env var precedence
+
+Environment variables always take precedence over database settings. Set an env var to lock a value regardless of what the Settings UI stores.
+
+### Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
 | `CT_PORT` | `4242` | Host port (docker compose) |
 | `CT_DATA_DIR` | `/data` | Data directory inside container |
-| `CT_WATCH_MODE` | `poll` | `auto` \| `native` \| `poll` |
-| `CT_POLL_INTERVAL` | `1000` | Polling interval in ms |
+| `CT_WATCH_MODE` | `auto` | `auto` \| `native` \| `poll` |
+| `CT_POLL_INTERVAL` | `1000` | Polling interval in ms — overrides `server.pollInterval` DB setting |
 | `CT_OTEL_ENABLED` | `false` | Enable OTEL HTTP receiver |
 | `CLAUDE_HOME` | `~/.claude` | Host path to Claude data |
+
+### Settings page tabs
+
+| Tab | What you can configure |
+|---|---|
+| **Model Pricing** | USD per 1M tokens per model. Add custom models or adjust rates. |
+| **Agent Graph** | Node/link colors, force simulation parameters, link thickness and opacity. |
+| **Server** | File watcher poll interval and stability thresholds (requires restart). |
+| **Display** | Event buffer size, jump step, cost/token formatting, time display, trace layout. |
 
 ## VS Code tasks
 

@@ -227,11 +227,12 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
             <text
               key={lane}
               x={LABEL_WIDTH - 8}
-              y={lane * (ROW_HEIGHT + ROW_GAP) + ROW_HEIGHT / 2 + 16}
+              y={lane * (ROW_HEIGHT + ROW_GAP) + ROW_HEIGHT / 2 + 2}
               fill={isHovered ? "#00a2e0" : "#003864"}
               fontSize={12}
               fontWeight={isHovered ? 700 : 500}
               textAnchor="end"
+              dominantBaseline="middle"
             >
               {label}
             </text>

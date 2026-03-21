@@ -27,6 +27,22 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
     startedAt: event.timestamp,
   });
 
+  // Deduplicate by message.id: one API response can produce multiple JSONL lines with different
+  // UUIDs but identical token usage (e.g. text + tool_use blocks). Keep only the entry with the
+  // highest total token count (the final non-streaming entry).
+  if (event.messageId) {
+    const existing = db.query(
+      `SELECT id, COALESCE(input_tokens,0)+COALESCE(output_tokens,0)+COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0) as total
+       FROM events WHERE message_id = ?`
+    ).get(event.messageId) as { id: string; total: number } | null;
+    if (existing) {
+      const newTotal = (event.inputTokens ?? 0) + (event.outputTokens ?? 0) +
+                       (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0);
+      if (newTotal <= existing.total) return null; // existing is already the best version
+      db.run("DELETE FROM events WHERE message_id = ?", [event.messageId]);
+    }
+  }
+
   // Calculate cost if we have token data
   let costUsd: number | undefined;
   if (event.model && event.inputTokens != null) {
@@ -41,6 +57,7 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
   // Insert event
   insertEvent(db, {
     id: event.id,
+    messageId: event.messageId,
     sessionId: event.sessionId,
     parentId: event.parentId,
     type: event.type,

@@ -14,6 +14,7 @@ export interface ParsedLine {
   agentId?: string;
   requestId?: string;
   message?: {
+    id?: string;
     model?: string;
     role?: string;
     content?: ContentBlock[] | string;
@@ -42,6 +43,7 @@ export interface ContentBlock {
 
 export interface ExtractedEvent {
   id: string;
+  messageId?: string;
   sessionId: string;
   parentId?: string;
   type: string;
@@ -100,6 +102,7 @@ export function extractEventData(line: ParsedLine): ExtractedEvent {
     agentId: line.agentId,
   };
 
+  if (line.message?.id) event.messageId = line.message.id;
   if (line.message?.model) event.model = line.message.model;
   if (usage?.input_tokens) event.inputTokens = usage.input_tokens;
   if (usage?.output_tokens) event.outputTokens = usage.output_tokens;

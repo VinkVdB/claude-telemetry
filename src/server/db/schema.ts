@@ -92,6 +92,24 @@ export function applySchema(db: Database): void {
   // Index on agent_id — created after migration so it works on both new and existing DBs
   db.exec("CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id)");
 
+  // Migration: add message_id for proper per-message deduplication
+  try { db.exec("ALTER TABLE events ADD COLUMN message_id TEXT"); } catch { /* column already exists */ }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_events_message_id ON events(message_id) WHERE message_id IS NOT NULL");
+
+  // Migration: reset ingested data to fix token double-counting bug (duplicate JSONL lines per message.id)
+  // Without this, one API response with text+tool_use produces 2+ events each with full token counts
+  const dedupMigration = db.query("SELECT value FROM settings WHERE key = 'migration_message_id_dedup'").get() as any;
+  if (!dedupMigration) {
+    db.exec("DELETE FROM events");
+    db.exec("DELETE FROM agents");
+    db.exec("DELETE FROM otel_raw");
+    db.exec("DELETE FROM sessions");
+    db.exec("DELETE FROM projects");
+    db.exec("DELETE FROM ingest_cursors");
+    db.run(`INSERT INTO settings (key, value) VALUES ('migration_message_id_dedup', '1')
+            ON CONFLICT(key) DO UPDATE SET value = '1'`);
+  }
+
   // Migration: clean up any NULL-id sessions that slipped in before the guard was added
   db.exec("DELETE FROM sessions WHERE id IS NULL");
 }

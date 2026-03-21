@@ -36,6 +36,7 @@ export function insertEvent(
   db: Database,
   event: {
     id: string;
+    messageId?: string;
     sessionId: string;
     parentId?: string;
     type: string;
@@ -56,12 +57,12 @@ export function insertEvent(
 ): void {
   db.run(
     `INSERT OR IGNORE INTO events
-     (id, session_id, parent_id, type, timestamp, model,
+     (id, message_id, session_id, parent_id, type, timestamp, model,
       input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
       cost_usd, duration_ms, tool_name, stop_reason, content, raw, agent_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      event.id, event.sessionId, event.parentId ?? null,
+      event.id, event.messageId ?? null, event.sessionId, event.parentId ?? null,
       event.type, event.timestamp, event.model ?? null,
       event.inputTokens ?? null, event.outputTokens ?? null,
       event.cacheReadTokens ?? null, event.cacheCreationTokens ?? null,

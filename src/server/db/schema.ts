@@ -1,5 +1,6 @@
 // src/server/db/schema.ts
 import { Database } from "bun:sqlite";
+import { updateSessionAggregates } from "./queries";
 
 export function applySchema(db: Database): void {
   db.exec("PRAGMA journal_mode = WAL");
@@ -158,6 +159,19 @@ export function applySchema(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_events_session_agent ON events(session_id, agent_id);
     CREATE INDEX IF NOT EXISTS idx_events_session_ts    ON events(session_id, timestamp DESC);
   `);
+
+  // Migration: backfill session_costs for existing events (one-time, guarded by flag)
+  const sessionCostsBackfill = db.query("SELECT value FROM settings WHERE key='migration_session_costs_backfill'").get();
+  if (!sessionCostsBackfill) {
+    const sessions = db.query("SELECT DISTINCT session_id FROM events").all() as { session_id: string }[];
+    for (const { session_id } of sessions) {
+      updateSessionAggregates(db, session_id);
+    }
+    db.run(
+      `INSERT INTO settings (key, value) VALUES ('migration_session_costs_backfill', '1')
+       ON CONFLICT(key) DO UPDATE SET value='1'`
+    );
+  }
 
   // FTS backfill — run once on first startup after upgrade (guarded by migration flag)
   const ftsBackfill = db.query("SELECT value FROM settings WHERE key='migration_fts_backfill'").get();

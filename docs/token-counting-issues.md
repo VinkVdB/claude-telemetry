@@ -50,16 +50,22 @@ This is what we implemented in `src/server/ingestion/processor.ts`.
 
 ---
 
-## Issue 2: `input_tokens` and `output_tokens` are severely undercounted due to streaming snapshots
+## Issue 2: `input_tokens` and `output_tokens` are severely undercounted — upstream relay bug
 
 ### What happens
 
-Claude Code logs assistant events **as streaming progresses**, capturing intermediate states. These
-intermediate JSONL entries have `stop_reason: null` and incomplete token counts — notably
-`output_tokens` is often recorded as `0` or `1` rather than the final value.
+`output_tokens` (and often `input_tokens`) are written incorrectly to JSONL by the Claude Code
+relay itself. The recorded value is frequently `1` regardless of actual output length. This is
+**not** a streaming-snapshot timing issue — the wrong value is persisted even on the final entry
+(the one with `stop_reason: "end_turn"` or `"tool_use"`).
 
-The final entry (with `stop_reason: "end_turn"` or `"tool_use"`) has the correct counts, but it
-may not always be written (e.g. if the connection drops or the process is killed mid-stream).
+Additionally, some API calls are not recorded to JSONL at all, creating gaps that no
+consumer-side deduplication or "keep highest" strategy can recover.
+
+This was investigated by the ccusage project (PR #826), which closed a deduplication PR after
+concluding: *"the root cause of underreported output_tokens is an upstream Claude Code API relay
+issue, not ccusage deduplication logic. JSONL output_tokens values are always 1 (incorrect). This
+issue is not universal and cannot be fixed by ccusage."*
 
 ### Evidence from real-world data (ccusage #866)
 
@@ -74,7 +80,9 @@ may not always be written (e.g. if the connection drops or the process is killed
 
 `cache_read_input_tokens` and `cache_creation_input_tokens` are written accurately to JSONL because
 they are determined at the **start** of a request (before streaming begins). `input_tokens` and
-`output_tokens` are finalised at the **end** of a streaming response and are frequently missed.
+`output_tokens` are computed at the **end** of a streaming response and the relay appears to
+write incorrect values (`1`) rather than the actual counts. This is a Claude Code bug, not a
+parsing or deduplication problem.
 
 ### Impact
 
@@ -83,13 +91,15 @@ actual API usage. Cost estimates based on these fields will be significantly und
 
 ### Mitigation
 
-When the `stop_reason` field is present and non-null on an entry, prefer that entry's token counts
-over earlier streaming snapshots (handled by Issue 1's "keep highest" strategy). For applications
-that need accurate input/output token counts, the most reliable source is the Anthropic usage
-dashboard or the `usage` field returned directly from the Streaming API, not the JSONL logs.
+There is no consumer-side fix. Issue 1's "keep highest" deduplication strategy does **not** help
+here — if the relay writes `output_tokens: 1` on the final entry, that value is what gets kept.
 
-In our tool, cache tokens dominate (>99% of total token volume), and cache fields are accurate, so
-cost calculations remain reliable despite the input/output undercount.
+For applications that need accurate `input_tokens`/`output_tokens`, the only reliable sources are
+the Anthropic usage dashboard or the `usage` field returned directly from the Streaming API.
+
+In our tool, cache tokens dominate (>99% of total token volume) and cache fields are accurate, so
+**cost calculations remain reliable despite the input/output undercount**. We display these fields
+but users should treat them as lower-bound estimates, not exact values.
 
 ---
 

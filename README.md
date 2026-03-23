@@ -48,6 +48,18 @@ docker compose down -v     # stop and delete all data
 docker compose up -d --build
 ```
 
+## Known accuracy limitations
+
+Token counts and costs shown in this dashboard use the official Claude Code JSONL logs as a source, but they are not exact figures. There are two sources of inaccuracy in the underlying JSONL data that no tool can fully compensate for:
+
+1. **`output_tokens` and `input_tokens` are often wrong.** Claude Code's relay records `output_tokens: 1` in many JSONL entries even when the actual output was far larger. This is an upstream Claude Code bug. Cache token fields (`cache_read_input_tokens`, `cache_creation_input_tokens`) are written correctly because they are determined before streaming begins.
+
+2. **Some API calls are missing entirely.** Not every request is written to JSONL, so session totals may be incomplete.
+
+Because cache tokens typically represent >99% of total token volume, **cost estimates are still useful as a relative guide** — they track spend patterns and compare sessions accurately. But treat absolute cost and token numbers as lower-bound estimates, not exact values. For authoritative figures, check your [Anthropic usage dashboard](https://console.anthropic.com/usage).
+
+> Enabling OTEL enrichment (see below) provides the actual `cost_usd` returned by Anthropic's API for each request, which sidesteps both issues. This can only affect new data, not historical logs.
+
 ## Connecting Claude Code to the dashboard (optional OTEL enrichment)
 
 By default, cost is **estimated** by multiplying token counts from the JSONL logs against a local pricing table. This means:
@@ -144,7 +156,9 @@ Open the Command Palette → **Tasks: Run Task**:
 | **Dev: Start frontend (Vite)** | `bun run dev:client` |
 | **Test: Run all tests** | `bun test` |
 | **Test: Watch** | `bun test --watch` |
-| **Seed DB from ~/.claude** | `bun scripts/seed.ts` |
+| **Seed DB from ~/.claude** [1] | `bun scripts/seed.ts` |
+
+[1] Re-populates DB based on JSONL files in `~/.claude/projects/`. You will lose OTEL-enriched data (actual costs and durations).
 
 ## Tech stack
 

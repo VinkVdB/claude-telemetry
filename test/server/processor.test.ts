@@ -47,7 +47,7 @@ describe("processJsonlLine", () => {
     expect(event.model).toBe("claude-sonnet-4-6");
     expect(event.input_tokens).toBe(150);
     expect(event.output_tokens).toBe(80);
-    expect(event.cost_usd).toBeGreaterThan(0);
+    expect(event.cost_usd).toBeNull();
   });
 
   test("skips duplicate events (idempotent)", () => {

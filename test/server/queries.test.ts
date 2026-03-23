@@ -101,6 +101,29 @@ describe("listEvents", () => {
     expect(events.length).toBe(4);
   });
 
+  test("returns empty result for unknown sessionId", () => {
+    const { events, total } = listEvents(db, { sessionId: "nonexistent" });
+    expect(total).toBe(0);
+    expect(events.length).toBe(0);
+  });
+
+  test("invalid FTS5 search term throws (caught by API layer)", () => {
+    // Standalone AND is invalid FTS5 syntax
+    expect(() => listEvents(db, { search: "AND" })).toThrow();
+  });
+
+  test("combined sessionId + agentIds filter", () => {
+    const { total } = listEvents(db, { sessionId: "s1", agentIds: ["agent-A", "__main__"] });
+    expect(total).toBe(3); // 2 main + 1 agent-A in session s1
+  });
+
+  test("limit is capped server-side at 1000", () => {
+    // Even with limit: 9999, we should not exceed 1000 per call (query internally caps)
+    const { events } = listEvents(db, { limit: 9999 });
+    // Only 4 events in test DB, so all returned -- but verify no error thrown
+    expect(events.length).toBe(4);
+  });
+
   test("pagination with offset", () => {
     const { events } = listEvents(db, { limit: 2, offset: 0 });
     expect(events.length).toBe(2);

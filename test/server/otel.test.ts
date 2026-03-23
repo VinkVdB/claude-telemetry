@@ -183,6 +183,48 @@ describe("OTEL receiver — otel_cost_usd enrichment", () => {
     expect(event.otel_cost_usd).toBeCloseTo(0.001, 5);
   });
 
+  test("span without cost_usd does NOT write otel_cost_usd", async () => {
+    const timestamp = "2026-03-23T10:00:00.000Z";
+    seedEvent(db, {
+      eventId: "evt-004",
+      sessionId: "sess-otel-4",
+      model: "claude-sonnet-4-6",
+      timestamp,
+    });
+
+    // Build payload without cost_usd attribute
+    const timeUnixNano = (BigInt(new Date(timestamp).getTime()) * 1_000_000n).toString();
+    const payload = {
+      resourceLogs: [{
+        scopeLogs: [{
+          logRecords: [{
+            timeUnixNano,
+            severityText: "claude_code.api_request",
+            attributes: [
+              { key: "event.name", value: { stringValue: "claude_code.api_request" } },
+              { key: "session.id", value: { stringValue: "sess-otel-4" } },
+              { key: "model", value: { stringValue: "claude-sonnet-4-6" } },
+              { key: "duration_ms", value: { stringValue: "1000" } },
+              // NOTE: cost_usd intentionally omitted
+            ],
+          }],
+        }],
+      }],
+    };
+
+    const res = await app.request("/v1/logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(res.status).toBe(200);
+
+    // otel_cost_usd must remain NULL — not written with 0
+    const event = db.query("SELECT * FROM events WHERE id = 'evt-004'").get() as any;
+    expect(event).not.toBeNull();
+    expect(event.otel_cost_usd).toBeNull();
+  });
+
   test("unmatched OTEL events fall through to otel_raw", async () => {
     // No seeded event — nothing to match
     const payload = makeOtelPayload({

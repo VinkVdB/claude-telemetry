@@ -47,10 +47,11 @@ function processLogRecord(db: Database, record: any): void {
   const eventName = attrs["event.name"] ?? record.severityText;
 
   if (eventName === "claude_code.api_request") {
-    // Try to enrich existing event with cost_usd and duration_ms
+    // Enrich existing event with OTEL-actual cost and duration
     const sessionId = attrs["session.id"];
-    const costUsd = parseFloat(attrs["cost_usd"] ?? "0");
-    if (isNaN(costUsd)) return; // skip malformed OTEL record
+    if (!attrs["cost_usd"]) return; // skip records without cost data
+    const costUsd = parseFloat(attrs["cost_usd"]);
+    if (isNaN(costUsd)) return;
     const durationMs = parseInt(attrs["duration_ms"] ?? "0", 10);
     const model = attrs["model"];
     const timestampMs = record.timeUnixNano

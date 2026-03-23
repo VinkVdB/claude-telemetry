@@ -1,5 +1,6 @@
 // src/server/db/queries.ts
 import type { Database } from "bun:sqlite";
+import { getModelPricing } from "../../shared/pricing";
 
 // --- Upserts for ingestion ---
 
@@ -94,10 +95,9 @@ export function updateSessionAggregates(db: Database, sessionId: string): void {
        total_output_tokens = (SELECT COALESCE(SUM(output_tokens), 0) FROM events WHERE session_id = ?),
        total_cache_read = (SELECT COALESCE(SUM(cache_read_tokens), 0) FROM events WHERE session_id = ?),
        total_cache_creation = (SELECT COALESCE(SUM(cache_creation_tokens), 0) FROM events WHERE session_id = ?),
-       total_cost_usd = (SELECT COALESCE(SUM(cost_usd), 0) FROM events WHERE session_id = ?),
        models_used = (SELECT json_group_array(DISTINCT model) FROM events WHERE session_id = ? AND model IS NOT NULL)
      WHERE id = ?`,
-    [sessionId, sessionId, sessionId, sessionId, sessionId, sessionId, sessionId]
+    [sessionId, sessionId, sessionId, sessionId, sessionId, sessionId]
   );
 
   db.run("DELETE FROM session_costs WHERE session_id = ?", [sessionId]);
@@ -125,6 +125,42 @@ export function updateSessionAggregates(db: Database, sessionId: string): void {
      GROUP BY model`,
     [sessionId]
   );
+
+  // Compute total_cost_usd from session_costs using OTEL-aware logic:
+  // If all events for a model have OTEL cost data, use otel_cost_usd; otherwise use token-based pricing.
+  const costRows = db
+    .query(
+      "SELECT model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, otel_cost_usd, otel_event_count, event_count FROM session_costs WHERE session_id = ?"
+    )
+    .all(sessionId) as Array<{
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cache_creation_tokens: number;
+    otel_cost_usd: number | null;
+    otel_event_count: number;
+    event_count: number;
+  }>;
+
+  let totalCostUsd = 0;
+  for (const row of costRows) {
+    const isOtelComplete = row.otel_event_count > 0 && row.otel_event_count === row.event_count;
+    if (isOtelComplete && row.otel_cost_usd != null) {
+      totalCostUsd += row.otel_cost_usd;
+    } else {
+      const p = getModelPricing(row.model);
+      if (p) {
+        totalCostUsd +=
+          (row.input_tokens / 1e6) * p.inputPerMToken +
+          (row.output_tokens / 1e6) * p.outputPerMToken +
+          (row.cache_read_tokens / 1e6) * p.cacheReadPerMToken +
+          (row.cache_creation_tokens / 1e6) * p.cacheWritePerMToken;
+      }
+    }
+  }
+
+  db.run("UPDATE sessions SET total_cost_usd = ? WHERE id = ?", [totalCostUsd, sessionId]);
 }
 
 export function upsertAgent(

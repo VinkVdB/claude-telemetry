@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { api } from "../lib/api";
 import { ProjectCard } from "../components/ProjectCard";
 import { useSSE } from "../lib/sse";
@@ -18,10 +18,17 @@ export function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<SortKey>("last_active");
 
-  const load = () => api.projects.list().then(setProjects).finally(() => setLoading(false));
+  const load = useCallback(() => {
+    api.projects.list().then(setProjects).finally(() => setLoading(false));
+  }, []);
 
-  useEffect(() => { load(); }, []);
-  useSSE(() => { load(); });
+  useEffect(() => { load(); }, [load]);
+
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useSSE(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => { refreshTimerRef.current = null; load(); }, 800);
+  });
 
   const sorted = useMemo(() => {
     return [...projects].sort((a, b) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { AgentTimeline } from "../components/AgentTimeline";
@@ -53,14 +53,20 @@ export function SessionDetailPage() {
     });
   }, [tab, graphLoaded, id]);
 
+  const coreRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+
   useSSE((event, data) => {
     if (event === "event" && data.sessionId === id) {
-      fetchCore();
-      setRefreshSignal(s => s + 1);
-      // If graph tab is open, reload graph data too
-      if (tab === "graph-trace") {
-        setGraphLoaded(false); // triggers reload via useEffect above
-      }
+      // Debounce metadata refresh — avoids hammering the API on rapid events
+      if (coreRefreshTimerRef.current) clearTimeout(coreRefreshTimerRef.current);
+      coreRefreshTimerRef.current = setTimeout(() => {
+        coreRefreshTimerRef.current = null;
+        fetchCore();
+        if (tabRef.current === "graph-trace") setGraphLoaded(false);
+      }, 800);
+      // AgentTimeline manages its own event reload via its own useSSE + requestReload
     }
   });
 

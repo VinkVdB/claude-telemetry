@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { SessionTable } from "../components/SessionTable";
@@ -22,9 +22,11 @@ export function ProjectDetailPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useSSE((event) => {
     if (event === "event" || event === "session_new") {
-      fetchData();
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => { refreshTimerRef.current = null; fetchData(); }, 800);
     }
   });
 

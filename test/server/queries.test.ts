@@ -297,6 +297,87 @@ describe("updateSessionAggregates — session_costs", () => {
     const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's4'").all();
     expect(rows.length).toBe(0);
   });
+
+  test("total_cost_usd is computed from token-based pricing (non-zero)", () => {
+    // claude-sonnet-4-6: $3/M input, $15/M output
+    // 1_000_000 input tokens = $3, 1_000_000 output tokens = $15 → total $18
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s5", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: "e5",
+      sessionId: "s5",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    updateSessionAggregates(db, "s5");
+
+    const session = db.query("SELECT total_cost_usd FROM sessions WHERE id = 's5'").get() as any;
+    expect(session.total_cost_usd).toBeCloseTo(18, 6);
+  });
+
+  test("total_cost_usd is computed from OTEL cost when all events have otel data", () => {
+    // Insert an event with otel_cost_usd set directly
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s6", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: "e6",
+      sessionId: "s6",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    // Set otel_cost_usd directly to simulate OTEL enrichment
+    db.run("UPDATE events SET otel_cost_usd = 0.42 WHERE id = 'e6'");
+    updateSessionAggregates(db, "s6");
+
+    const session = db.query("SELECT total_cost_usd FROM sessions WHERE id = 's6'").get() as any;
+    // otel_event_count (1) === event_count (1), so OTEL cost should be used
+    expect(session.total_cost_usd).toBeCloseTo(0.42, 6);
+  });
+
+  test("total_cost_usd falls back to token pricing when OTEL is incomplete", () => {
+    // Two events, only one has otel_cost_usd → partial OTEL → token pricing used
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s7", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: "e7a",
+      sessionId: "s7",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    insertEvent(db, {
+      id: "e7b",
+      sessionId: "s7",
+      type: "assistant",
+      timestamp: "2026-01-01T00:01:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    // Only one of two events has OTEL data → incomplete
+    db.run("UPDATE events SET otel_cost_usd = 999 WHERE id = 'e7a'");
+    updateSessionAggregates(db, "s7");
+
+    // Token pricing: 2M input * $3/M = $6
+    const session = db.query("SELECT total_cost_usd FROM sessions WHERE id = 's7'").get() as any;
+    expect(session.total_cost_usd).toBeCloseTo(6, 6);
+  });
 });
 
 describe("getSessionCostBreakdown", () => {

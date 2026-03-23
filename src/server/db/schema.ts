@@ -112,4 +112,42 @@ export function applySchema(db: Database): void {
 
   // Migration: clean up any NULL-id sessions that slipped in before the guard was added
   db.exec("DELETE FROM sessions WHERE id IS NULL");
+
+  // FTS5 virtual table for full-text search on raw event JSON
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS events_fts
+      USING fts5(raw, content=events, content_rowid=rowid);
+
+    CREATE TRIGGER IF NOT EXISTS events_fts_ai AFTER INSERT ON events BEGIN
+      INSERT INTO events_fts(rowid, raw) VALUES (new.rowid, new.raw);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS events_fts_ad AFTER DELETE ON events BEGIN
+      INSERT INTO events_fts(events_fts, rowid, raw) VALUES ('delete', old.rowid, old.raw);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS events_fts_au AFTER UPDATE ON events BEGIN
+      INSERT INTO events_fts(events_fts, rowid, raw) VALUES ('delete', old.rowid, old.raw);
+      INSERT INTO events_fts(rowid, raw) VALUES (new.rowid, new.raw);
+    END;
+  `);
+
+  // New composite indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_events_session_agent ON events(session_id, agent_id);
+    CREATE INDEX IF NOT EXISTS idx_events_session_ts    ON events(session_id, timestamp DESC);
+  `);
+
+  // FTS backfill — run once on first startup after upgrade (guarded by migration flag)
+  const ftsBackfill = db.query("SELECT value FROM settings WHERE key='migration_fts_backfill'").get();
+  if (!ftsBackfill) {
+    const count = (db.query("SELECT COUNT(*) as c FROM events").get() as any).c;
+    if (count > 0) {
+      db.exec("INSERT INTO events_fts(rowid, raw) SELECT rowid, raw FROM events");
+    }
+    db.run(
+      `INSERT INTO settings (key, value) VALUES ('migration_fts_backfill', '1')
+       ON CONFLICT(key) DO UPDATE SET value='1'`
+    );
+  }
 }

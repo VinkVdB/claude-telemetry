@@ -74,6 +74,48 @@ describe("applySchema", () => {
     expect(names).toContain("idx_events_session_ts");
   });
 
+  test("creates session_costs table", () => {
+    applySchema(db);
+    const table = db
+      .query("SELECT name FROM sqlite_master WHERE type='table' AND name='session_costs'")
+      .get() as { name: string } | null;
+    expect(table).not.toBeNull();
+  });
+
+  test("session_costs has correct columns", () => {
+    applySchema(db);
+    const cols = db
+      .query("PRAGMA table_info(session_costs)")
+      .all() as { name: string; type: string; notnull: number; dflt_value: string | null; pk: number }[];
+    const colMap = Object.fromEntries(cols.map((c) => [c.name, c]));
+    expect(colMap["session_id"]).toBeDefined();
+    expect(colMap["model"]).toBeDefined();
+    expect(colMap["input_tokens"]).toBeDefined();
+    expect(colMap["output_tokens"]).toBeDefined();
+    expect(colMap["cache_read_tokens"]).toBeDefined();
+    expect(colMap["cache_creation_tokens"]).toBeDefined();
+    expect(colMap["otel_cost_usd"]).toBeDefined();
+    expect(colMap["otel_event_count"]).toBeDefined();
+    expect(colMap["event_count"]).toBeDefined();
+  });
+
+  test("creates idx_session_costs_session index", () => {
+    applySchema(db);
+    const idx = db
+      .query("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_session_costs_session'")
+      .get() as { name: string } | null;
+    expect(idx).not.toBeNull();
+  });
+
+  test("events table has otel_cost_usd column", () => {
+    applySchema(db);
+    const cols = db
+      .query("PRAGMA table_info(events)")
+      .all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toContain("otel_cost_usd");
+  });
+
   test("FTS backfill migration flag is recorded", () => {
     // First apply schema to create all tables and run existing migrations
     applySchema(db);

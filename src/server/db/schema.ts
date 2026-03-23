@@ -113,6 +113,27 @@ export function applySchema(db: Database): void {
   // Migration: clean up any NULL-id sessions that slipped in before the guard was added
   db.exec("DELETE FROM sessions WHERE id IS NULL");
 
+  // Migration: add otel_cost_usd column to events for OTEL-reported cost (separate from estimated cost_usd)
+  try { db.exec("ALTER TABLE events ADD COLUMN otel_cost_usd REAL"); } catch { /* column already exists */ }
+
+  // Session costs materialized aggregate table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_costs (
+      session_id            TEXT    NOT NULL,
+      model                 TEXT    NOT NULL,
+      input_tokens          INTEGER NOT NULL DEFAULT 0,
+      output_tokens         INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      otel_cost_usd         REAL,
+      otel_event_count      INTEGER NOT NULL DEFAULT 0,
+      event_count           INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (session_id, model)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session_costs_session ON session_costs(session_id);
+  `);
+
   // FTS5 virtual table for full-text search on raw event JSON
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS events_fts

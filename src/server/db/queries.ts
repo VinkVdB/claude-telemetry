@@ -181,6 +181,8 @@ export function listEvents(
     type?: string;
     model?: string;
     toolName?: string;
+    agentIds?: string[];  // "__main__" maps to agent_id IS NULL
+    search?: string;      // FTS5 match
     limit?: number;
     offset?: number;
   }
@@ -188,19 +190,48 @@ export function listEvents(
   const conditions: string[] = [];
   const params: any[] = [];
 
-  if (filters.sessionId) { conditions.push("session_id = ?"); params.push(filters.sessionId); }
-  if (filters.type) { conditions.push("type = ?"); params.push(filters.type); }
-  if (filters.model) { conditions.push("model LIKE ?"); params.push(filters.model + "%"); }
-  if (filters.toolName) { conditions.push("tool_name = ?"); params.push(filters.toolName); }
+  if (filters.sessionId) { conditions.push("e.session_id = ?"); params.push(filters.sessionId); }
+  if (filters.type)      { conditions.push("e.type = ?");       params.push(filters.type); }
+  if (filters.model)     { conditions.push("e.model LIKE ?");   params.push(filters.model + "%"); }
+  if (filters.toolName)  { conditions.push("e.tool_name = ?");  params.push(filters.toolName); }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const limit = filters.limit ?? 100;
+  if (filters.agentIds && filters.agentIds.length > 0) {
+    const hasMain = filters.agentIds.includes("__main__");
+    const realIds = filters.agentIds.filter(id => id !== "__main__");
+
+    if (hasMain && realIds.length > 0) {
+      conditions.push(`(e.agent_id IS NULL OR e.agent_id IN (${realIds.map(() => "?").join(",")}))`);
+      params.push(...realIds);
+    } else if (hasMain) {
+      conditions.push("e.agent_id IS NULL");
+    } else {
+      conditions.push(`e.agent_id IN (${realIds.map(() => "?").join(",")})`);
+      params.push(...realIds);
+    }
+  }
+
+  const limit  = Math.min(filters.limit  ?? 100, 1000);
   const offset = filters.offset ?? 0;
 
+  // FTS5 search: join to events_fts virtual table
+  const useFts = !!filters.search;
+  const fromClause  = useFts
+    ? "FROM events e JOIN events_fts fts ON e.rowid = fts.rowid"
+    : "FROM events e";
+  const ftsCondition = useFts ? ["events_fts MATCH ?"] : [];
+  const ftsParams    = useFts ? [filters.search] : [];
+
+  const allConditions = [...ftsCondition, ...conditions];
+  const where = allConditions.length > 0 ? `WHERE ${allConditions.join(" AND ")}` : "";
+  const allParams = [...ftsParams, ...params];
+
   return {
-    events: db.query(`SELECT * FROM events ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`)
-      .all(...params, limit, offset),
-    total: (db.query(`SELECT COUNT(*) as c FROM events ${where}`).get(...params) as any).c,
+    events: db
+      .query(`SELECT e.* ${fromClause} ${where} ORDER BY e.timestamp DESC LIMIT ? OFFSET ?`)
+      .all(...allParams, limit, offset),
+    total: (db
+      .query(`SELECT COUNT(*) as c ${fromClause} ${where}`)
+      .get(...allParams) as any).c,
   };
 }
 
@@ -248,4 +279,38 @@ export function listAgents(db: Database, sessionId: string) {
     WHERE a.session_id = ?
     ORDER BY a.started_at ASC
   `).all(sessionId);
+}
+
+export function listAgentSummaries(db: Database, sessionId: string) {
+  return db.query(`
+    SELECT
+      NULL          as id,
+      'main'        as agent_type,
+      NULL          as description,
+      NULL          as started_at,
+      COUNT(*)      as event_count,
+      COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens,
+      MAX(timestamp) as last_active,
+      (SELECT model FROM events
+       WHERE session_id = ? AND agent_id IS NULL AND model IS NOT NULL
+       ORDER BY timestamp DESC LIMIT 1) as last_model
+    FROM events WHERE session_id = ? AND agent_id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+      a.id,
+      a.agent_type,
+      a.description,
+      a.started_at,
+      (SELECT COUNT(*) FROM events WHERE agent_id = a.id) as event_count,
+      (SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM events WHERE agent_id = a.id) as total_tokens,
+      (SELECT MAX(timestamp) FROM events WHERE agent_id = a.id) as last_active,
+      (SELECT model FROM events WHERE agent_id = a.id AND model IS NOT NULL
+       ORDER BY timestamp DESC LIMIT 1) as last_model
+    FROM agents a WHERE a.session_id = ?
+
+    ORDER BY started_at ASC
+  `).all(sessionId, sessionId, sessionId);
 }

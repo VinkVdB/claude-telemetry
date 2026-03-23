@@ -76,4 +76,35 @@ describe("API", () => {
     expect(data.events.length).toBe(1);
     expect(data.total).toBe(1);
   });
+
+  test("POST /api/events/query filters by sessionId", async () => {
+    const res = await app.request("/api/events/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "sess-abc" }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.events.length).toBe(1);
+    expect(data.total).toBe(1);
+  });
+
+  test("POST /api/events/query returns 400 for invalid JSON", async () => {
+    const res = await app.request("/api/events/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not-json",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("GET /api/sessions/:id/agent-summaries returns main agent", async () => {
+    const res = await app.request("/api/sessions/sess-abc/agent-summaries");
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(Array.isArray(data)).toBe(true);
+    const main = data.find((s: any) => s.id === null);
+    expect(main).toBeDefined();
+    expect(main.event_count).toBeGreaterThan(0);
+  });
 });

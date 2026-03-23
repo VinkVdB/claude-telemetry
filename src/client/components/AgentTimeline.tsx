@@ -79,7 +79,7 @@ export function AgentTimeline({
     const allVisible = [...allIds].every(id => debouncedVisibleAgents.has(id));
 
     if (allVisible) {
-      // No agentIds filter -- return all events for this session
+      // No agentIds filter - return all events for this session
       return { sessionId };
     }
 
@@ -191,7 +191,7 @@ export function AgentTimeline({
         </div>
       </div>
 
-      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(220px, 1fr))` }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
         {summaries.map((s) => {
           const active = visibleAgents.has(s.id);
           return (

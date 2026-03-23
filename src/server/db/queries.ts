@@ -241,12 +241,68 @@ export function listEvents(
 
   return {
     events: db
-      .query(`SELECT e.* ${fromClause} ${where} ORDER BY e.timestamp DESC LIMIT ? OFFSET ?`)
+      .query(`SELECT e.rowid as seq, e.* ${fromClause} ${where} ORDER BY e.timestamp DESC LIMIT ? OFFSET ?`)
       .all(...allParams, limit, offset),
     total: (db
       .query(`SELECT COUNT(*) as c ${fromClause} ${where}`)
       .get(...allParams) as any).c,
   };
+}
+
+/** Returns the pagination offset (position from newest) of the event with the given rowid,
+ *  within the same filtered result set used by listEvents. */
+export function getEventOffsetBySeq(
+  db: Database,
+  seq: number,
+  filters: {
+    sessionId?: string;
+    type?: string;
+    model?: string;
+    toolName?: string;
+    agentIds?: string[];
+    search?: string;
+  }
+): number {
+  const target = db.query("SELECT timestamp FROM events WHERE rowid = ?").get(seq) as { timestamp: string } | null;
+  if (!target) return 0;
+
+  const conditions: string[] = ["e.timestamp > ?"];
+  const params: any[] = [target.timestamp];
+
+  if (filters.sessionId) { conditions.push("e.session_id = ?"); params.push(filters.sessionId); }
+  if (filters.type)      { conditions.push("e.type = ?");       params.push(filters.type); }
+  if (filters.model)     { conditions.push("e.model LIKE ?");   params.push(filters.model + "%"); }
+  if (filters.toolName)  { conditions.push("e.tool_name = ?");  params.push(filters.toolName); }
+
+  if (filters.agentIds) {
+    if (filters.agentIds.length === 0) {
+      return 0;
+    } else {
+      const hasMain = filters.agentIds.includes("__main__");
+      const realIds = filters.agentIds.filter(id => id !== "__main__");
+      if (hasMain && realIds.length > 0) {
+        conditions.push(`(e.agent_id IS NULL OR e.agent_id IN (${realIds.map(() => "?").join(",")}))`);
+        params.push(...realIds);
+      } else if (hasMain) {
+        conditions.push("e.agent_id IS NULL");
+      } else {
+        conditions.push(`e.agent_id IN (${realIds.map(() => "?").join(",")})`);
+        params.push(...realIds);
+      }
+    }
+  }
+
+  const useFts = !!filters.search;
+  const fromClause = useFts ? "FROM events e JOIN events_fts fts ON e.rowid = fts.rowid" : "FROM events e";
+  const ftsCondition = useFts ? ["events_fts MATCH ?"] : [];
+  const ftsParams    = useFts ? [filters.search] : [];
+
+  const allConditions = [...ftsCondition, ...conditions];
+  const where = allConditions.length > 0 ? `WHERE ${allConditions.join(" AND ")}` : "";
+  const allParams = [...ftsParams, ...params];
+
+  const row = db.query(`SELECT COUNT(*) as c ${fromClause} ${where}`).get(...allParams) as any;
+  return row.c;
 }
 
 export function getProjectCostBreakdown(db: Database, projectId: string) {

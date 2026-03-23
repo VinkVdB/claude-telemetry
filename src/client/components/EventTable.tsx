@@ -194,29 +194,32 @@ export function EventTable({
   useEffect(() => {
     if (!jumpTargetEventId || !scrollRef.current || events.length === 0) return;
 
-    // Find the target in the displayed events
     const targetIndex = events.findIndex((e) => e.id === jumpTargetEventId);
     if (targetIndex < 0) return;
 
+    // Double rAF: first frame commits the DOM, second frame has stable layout measurements
     requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const rows = el.querySelectorAll("tbody tr");
-      const targetRow = rows[targetIndex] as HTMLElement | undefined;
-      if (targetRow) {
-        const containerRect = el.getBoundingClientRect();
-        const rowRect = targetRow.getBoundingClientRect();
-        const scrollTarget =
-          el.scrollTop +
-          (rowRect.top - containerRect.top) -
-          containerRect.height / 2 +
-          rowRect.height / 2;
-        el.scrollTo({ top: Math.max(0, scrollTarget), behavior: "smooth" });
+      requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const rows = el.querySelectorAll("tbody tr");
+        const targetRow = rows[targetIndex] as HTMLElement | undefined;
+        if (targetRow) {
+          const containerRect = el.getBoundingClientRect();
+          const rowRect = targetRow.getBoundingClientRect();
+          // Scroll the container (not the page) so the row is centered
+          const scrollTarget =
+            el.scrollTop +
+            (rowRect.top - containerRect.top) -
+            containerRect.height / 2 +
+            rowRect.height / 2;
+          el.scrollTo({ top: Math.max(0, scrollTarget), behavior: "smooth" });
 
-        // Briefly highlight the row
-        targetRow.classList.add("bg-accent/20");
-        setTimeout(() => targetRow.classList.remove("bg-accent/20"), 2000);
-      }
+          // Highlight the row for 2s
+          targetRow.classList.add("bg-accent/20");
+          setTimeout(() => targetRow.classList.remove("bg-accent/20"), 2000);
+        }
+      });
     });
   }, [jumpTargetEventId, events.length]);
 
@@ -227,11 +230,11 @@ export function EventTable({
 
   const handleJumpSubmit = useCallback(() => {
     const num = parseInt(jumpInput, 10);
-    if (!isNaN(num) && num >= 1 && num <= total) {
+    if (!isNaN(num) && num >= 1) {
       onJumpTo(num);
       setJumpInput("");
     }
-  }, [jumpInput, onJumpTo, total]);
+  }, [jumpInput, onJumpTo]);
 
   // Derive the range of visible event numbers for the status bar
   const visibleNumbers = events
@@ -248,7 +251,7 @@ export function EventTable({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="max-h-[calc(100vh-16rem)] overflow-y-auto border border-border rounded-xl"
+        className="max-h-[calc(100vh-16rem)] min-h-[16rem] overflow-y-auto border border-border rounded-xl"
       >
         {/* Top loading indicator for prepend */}
         {isLoading && hasPrevious && (

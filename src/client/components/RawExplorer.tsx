@@ -31,6 +31,8 @@ export function RawExplorer() {
     loadPrevious,
     jumpTo,
     scrollToTop,
+    requestReload,
+    isAtTop,
     offset,
     hasMore,
     hasPrevious,
@@ -39,16 +41,15 @@ export function RawExplorer() {
 
   const eventNumberMap = useMemo(() => {
     const map = new Map<string, number>();
-    events.forEach((e, i) => {
-      map.set(e.id, total - offset - i);
-    });
+    events.forEach(e => map.set(e.id, e.seq));
     return map;
-  }, [events, total, offset]);
+  }, [events]);
 
-  // SSE: reload immediately if at top; show banner if user has scrolled back
+  // SSE: reload with debounce if at top; show banner if user has scrolled back
+  // Use isAtTop() to avoid stale-closure offset reads
   useSSE((_eventName) => {
-    if (offset === 0 && !isLoading) {
-      scrollToTop();
+    if (isAtTop()) {
+      requestReload();
     } else {
       setNewEventCount((c) => c + 1);
     }

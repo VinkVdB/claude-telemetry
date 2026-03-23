@@ -7,41 +7,60 @@ import { AgentGraph } from "../components/AgentGraph";
 import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
 import { useSSE } from "../lib/sse";
 import { formatTokens, formatCost, cn } from "../lib/utils";
-import type { Session, Event, Agent, CostBreakdown } from "../lib/types";
+import type { Session, Event, Agent, CostBreakdown, AgentSummary } from "../lib/types";
 
 type Tab = "agents" | "graph-trace";
 
 export function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [session, setSession] = useState<Session | null>(null);
-  const [events, setEvents] = useState<Event[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentSummaries, setAgentSummaries] = useState<AgentSummary[]>([]);
   const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [tab, setTab] = useState<Tab>("agents");
   const [live, setLive] = useState(false);
   const [refreshSignal, setRefreshSignal] = useState(0);
 
-  const fetchData = useCallback(async () => {
+  // Graph & Trace: lazy-loaded only when that tab is first opened
+  const [graphEvents, setGraphEvents] = useState<Event[]>([]);
+  const [graphAgents, setGraphAgents] = useState<Agent[]>([]);
+  const [graphLoaded, setGraphLoaded] = useState(false);
+
+  const fetchCore = useCallback(async () => {
     if (!id) return;
-    const [sess, evtResult, agts, costData] = await Promise.all([
+    const [sess, summaries, costData] = await Promise.all([
       api.sessions.get(id),
-      api.events.list({ sessionId: id, limit: "10000" }),
-      api.agents.list(id),
+      api.sessions.agentSummaries(id),
       api.sessions.costs(id).catch(() => [] as CostBreakdown[]),
     ]);
     setSession(sess);
-    setEvents(evtResult.events);
-    setAgents(agts);
+    setAgentSummaries(summaries);
     setCosts(costData);
     setLive(true);
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchCore(); }, [fetchCore]);
+
+  // Lazy-load Graph & Trace data when that tab becomes active
+  useEffect(() => {
+    if (tab !== "graph-trace" || graphLoaded || !id) return;
+    Promise.all([
+      api.events.query({ sessionId: id, limit: 5000, offset: 0 }),
+      api.agents.list(id),
+    ]).then(([evtResult, agts]) => {
+      setGraphEvents(evtResult.events);
+      setGraphAgents(agts);
+      setGraphLoaded(true);
+    });
+  }, [tab, graphLoaded, id]);
 
   useSSE((event, data) => {
     if (event === "event" && data.sessionId === id) {
-      fetchData();
+      fetchCore();
       setRefreshSignal(s => s + 1);
+      // If graph tab is open, reload graph data too
+      if (tab === "graph-trace") {
+        setGraphLoaded(false); // triggers reload via useEffect above
+      }
     }
   });
 
@@ -70,9 +89,9 @@ export function SessionDetailPage() {
         <div className="flex gap-4 text-sm">
           <span className="text-muted">Tokens: <strong className="text-primary-dark">{formatTokens(totalTokens)}</strong></span>
           <span className="text-muted">Cost: <strong className="text-primary-dark">{formatCost(session.total_cost_usd)}</strong></span>
-          <span className="text-muted">Events: <strong className="text-primary-dark">{events.length}</strong></span>
-          {agents.length > 0 && (
-            <span className="text-muted">Agents: <strong className="text-primary-dark">{agents.length}</strong></span>
+          <span className="text-muted">Events: <strong className="text-primary-dark">{session.event_count}</strong></span>
+          {agentSummaries.length > 1 && (
+            <span className="text-muted">Agents: <strong className="text-primary-dark">{agentSummaries.length - 1}</strong></span>
           )}
         </div>
         {live && (
@@ -107,11 +126,28 @@ export function SessionDetailPage() {
         ))}
       </div>
 
-      {tab === "agents" && <AgentTimeline agents={agents} events={events} sessionId={id!} refreshSignal={refreshSignal} />}
+      {tab === "agents" && (
+        <AgentTimeline
+          agentSummaries={agentSummaries}
+          sessionId={id!}
+          refreshSignal={refreshSignal}
+        />
+      )}
       {tab === "graph-trace" && (
         <div className="space-y-6">
-          <TraceView events={events} agents={agents} />
-          <AgentGraph agents={agents} events={events} />
+          {session.event_count > 5000 && (
+            <div className="border border-amber-300 bg-amber-50 rounded-lg px-4 py-2 text-sm text-amber-800">
+              This session has {session.event_count.toLocaleString()} events. Graph & Trace is limited to the first 5,000 events.
+            </div>
+          )}
+          {!graphLoaded ? (
+            <p className="text-muted text-sm animate-pulse">Loading graph data...</p>
+          ) : (
+            <>
+              <TraceView events={graphEvents} agents={graphAgents} />
+              <AgentGraph agents={graphAgents} events={graphEvents} />
+            </>
+          )}
         </div>
       )}
     </div>

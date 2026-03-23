@@ -1,6 +1,7 @@
 // src/client/components/RawExplorer.tsx
 import { useState, useMemo } from "react";
 import { useInfiniteEvents } from "../hooks/useInfiniteEvents";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useSSE } from "../lib/sse";
 import { EventTable } from "./EventTable";
 import { DetailPanel } from "./DetailPanel";
@@ -8,20 +9,19 @@ import type { Event } from "../lib/types";
 
 export function RawExplorer() {
   const [selected, setSelected] = useState<Event | null>(null);
-  const [filters, setFilters] = useState<Record<string, string>>({
-    type: "",
-    model: "",
-  });
-  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter]   = useState("");
+  const [modelFilter, setModelFilter] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [newEventCount, setNewEventCount] = useState(0);
 
-  // Build API filters (only include non-empty values)
-  const apiFilters = useMemo(() => {
-    const result: Record<string, string> = {};
-    Object.entries(filters).forEach(([k, v]) => {
-      if (v) result[k] = v;
-    });
-    return result;
-  }, [filters]);
+  // Debounce search — 300ms so we don't fire a request per keystroke
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
+
+  const filters = useMemo(() => ({
+    ...(typeFilter  ? { type:   typeFilter  } : {}),
+    ...(modelFilter ? { model:  modelFilter } : {}),
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+  }), [typeFilter, modelFilter, debouncedSearch]);
 
   const {
     events,
@@ -35,9 +35,8 @@ export function RawExplorer() {
     hasMore,
     hasPrevious,
     jumpTargetEventId,
-  } = useInfiniteEvents({ filters: apiFilters, pageSize: 100 });
+  } = useInfiniteEvents({ filters, pageSize: 100 });
 
-  // Stable event number map from unfiltered data
   const eventNumberMap = useMemo(() => {
     const map = new Map<string, number>();
     events.forEach((e, i) => {
@@ -46,33 +45,28 @@ export function RawExplorer() {
     return map;
   }, [events, total, offset]);
 
-  // Client-side search filter on loaded events
-  const filteredEvents = useMemo(
-    () =>
-      search
-        ? events.filter((e) =>
-            e.raw?.toLowerCase().includes(search.toLowerCase())
-          )
-        : events,
-    [events, search]
-  );
-
-  // SSE: scroll to top on new events
+  // SSE: reload immediately if at top; show banner if user has scrolled back
   useSSE((_eventName) => {
-    scrollToTop();
+    if (offset === 0 && !isLoading) {
+      scrollToTop();
+    } else {
+      setNewEventCount((c) => c + 1);
+    }
   });
+
+  const handleScrollToTop = () => {
+    scrollToTop();
+    setNewEventCount(0);
+  };
 
   return (
     <div className="flex gap-4 items-start">
-      {/* Left: filters + EventTable */}
       <div className="flex-[3] min-w-0">
         {/* Filters */}
         <div className="flex gap-3 mb-4 flex-wrap">
           <select
-            value={filters.type}
-            onChange={(e) =>
-              setFilters((f) => ({ ...f, type: e.target.value }))
-            }
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
             className="border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
           >
             <option value="">All types</option>
@@ -82,10 +76,8 @@ export function RawExplorer() {
             <option value="system">System</option>
           </select>
           <select
-            value={filters.model}
-            onChange={(e) =>
-              setFilters((f) => ({ ...f, model: e.target.value }))
-            }
+            value={modelFilter}
+            onChange={(e) => setModelFilter(e.target.value)}
             className="border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
           >
             <option value="">All models</option>
@@ -95,15 +87,25 @@ export function RawExplorer() {
           </select>
           <input
             type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search raw JSON..."
             className="border border-border rounded-lg px-3 py-1.5 text-sm flex-1 min-w-[160px]"
           />
         </div>
 
+        {/* New events banner */}
+        {newEventCount > 0 && (
+          <button
+            onClick={handleScrollToTop}
+            className="w-full mb-3 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            {newEventCount} new event{newEventCount !== 1 ? "s" : ""} — scroll to top
+          </button>
+        )}
+
         <EventTable
-          events={filteredEvents}
+          events={events}
           total={total}
           isLoading={isLoading}
           onLoadMore={loadMore}
@@ -112,7 +114,7 @@ export function RawExplorer() {
           hasMore={hasMore}
           hasPrevious={hasPrevious}
           onJumpTo={jumpTo}
-          onScrollToTop={scrollToTop}
+          onScrollToTop={handleScrollToTop}
           selected={selected}
           onSelect={setSelected}
           eventNumberMap={eventNumberMap}
@@ -120,7 +122,6 @@ export function RawExplorer() {
         />
       </div>
 
-      {/* Right: detail panel */}
       <div className="flex-[2] min-w-0 sticky top-4">
         {selected ? (
           <DetailPanel event={selected} onClose={() => setSelected(null)} />

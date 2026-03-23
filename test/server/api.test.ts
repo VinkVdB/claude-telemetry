@@ -69,12 +69,9 @@ describe("API", () => {
     expect(data[0].id).toBe("sess-abc");
   });
 
-  test("GET /api/events?sessionId= returns events with pagination", async () => {
+  test("GET /api/events is removed (404)", async () => {
     const res = await app.request("/api/events?sessionId=sess-abc");
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.events.length).toBe(1);
-    expect(data.total).toBe(1);
+    expect(res.status).toBe(404);
   });
 
   test("POST /api/events/query filters by sessionId", async () => {

@@ -4,6 +4,7 @@ import { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import { applySchema } from "../../src/server/db/schema";
 import { processJsonlLine } from "../../src/server/ingestion/processor";
+import { insertEvent, upsertProject, upsertSession, updateSessionAggregates } from "../../src/server/db/queries";
 import { createApiRoutes } from "../../src/server/api/projects";
 import { createSessionRoutes } from "../../src/server/api/sessions";
 import { createEventRoutes } from "../../src/server/api/events";
@@ -157,5 +158,122 @@ describe("agent summaries with subagent", () => {
     const data = await res.json() as any;
     expect(data.total).toBe(1);
     expect(data.events[0].agent_id).toBeNull();
+  });
+});
+
+describe("OTEL-aware cost computation", () => {
+  let db: Database;
+  let app: Hono;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    applySchema(db);
+    app = new Hono();
+    createApiRoutes(app, db);
+    createSessionRoutes(app, db);
+    createEventRoutes(app, db);
+
+    upsertProject(db, "proj-otel", "otel-project", "/otel-project");
+    upsertSession(db, "sess-otel", "proj-otel", { startedAt: "2026-03-01T00:00:00.000Z" });
+  });
+
+  test("GET /api/sessions/:id/costs uses OTEL cost when all events have otel_cost_usd", async () => {
+    // Two events for the same model, both with otel_cost_usd
+    insertEvent(db, {
+      id: "e-otel-1", sessionId: "sess-otel", type: "assistant", timestamp: "2026-03-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6", inputTokens: 1000, outputTokens: 500,
+      cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0.025,
+    });
+    insertEvent(db, {
+      id: "e-otel-2", sessionId: "sess-otel", type: "assistant", timestamp: "2026-03-01T01:00:00.000Z",
+      model: "claude-sonnet-4-6", inputTokens: 2000, outputTokens: 1000,
+      cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0.05,
+    });
+    // Set otel_cost_usd on both events
+    db.run("UPDATE events SET otel_cost_usd = 0.025 WHERE id = 'e-otel-1'");
+    db.run("UPDATE events SET otel_cost_usd = 0.05 WHERE id = 'e-otel-2'");
+    updateSessionAggregates(db, "sess-otel");
+
+    const res = await app.request("/api/sessions/sess-otel/costs");
+    expect(res.status).toBe(200);
+    const data = await res.json() as any[];
+    expect(data.length).toBe(1);
+    const row = data[0];
+    // OTEL complete: otel_event_count === event_count
+    expect(row.otel_event_count).toBe(2);
+    expect(row.event_count).toBe(2);
+    // cost_usd should be otel total (0.025 + 0.05 = 0.075)
+    expect(row.cost_usd).toBeCloseTo(0.075, 6);
+    // Breakdown costs should sum to cost_usd
+    expect(row.input_cost + row.output_cost + row.cache_read_cost + row.cache_creation_cost).toBeCloseTo(row.cost_usd, 6);
+  });
+
+  test("GET /api/sessions/:id/costs uses token-based cost when OTEL is partial", async () => {
+    insertEvent(db, {
+      id: "e-partial-1", sessionId: "sess-otel", type: "assistant", timestamp: "2026-03-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6", inputTokens: 1000000, outputTokens: 0,
+      cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0,
+    });
+    insertEvent(db, {
+      id: "e-partial-2", sessionId: "sess-otel", type: "assistant", timestamp: "2026-03-01T01:00:00.000Z",
+      model: "claude-sonnet-4-6", inputTokens: 1000000, outputTokens: 0,
+      cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0,
+    });
+    // Only one event has otel_cost_usd
+    db.run("UPDATE events SET otel_cost_usd = 0.1 WHERE id = 'e-partial-1'");
+    updateSessionAggregates(db, "sess-otel");
+
+    const res = await app.request("/api/sessions/sess-otel/costs");
+    expect(res.status).toBe(200);
+    const data = await res.json() as any[];
+    expect(data.length).toBe(1);
+    const row = data[0];
+    expect(row.otel_event_count).toBe(1);
+    expect(row.event_count).toBe(2);
+    // Should fall back to token-based: 2M input tokens * $3/M = $6
+    expect(row.cost_usd).toBeCloseTo(6, 4);
+    expect(row.input_cost).toBeCloseTo(6, 4);
+  });
+
+  test("GET /api/projects/:id/costs uses OTEL cost when all session events have otel_cost_usd", async () => {
+    insertEvent(db, {
+      id: "e-proj-1", sessionId: "sess-otel", type: "assistant", timestamp: "2026-03-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6", inputTokens: 1000, outputTokens: 500,
+      cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0.01,
+    });
+    db.run("UPDATE events SET otel_cost_usd = 0.01 WHERE id = 'e-proj-1'");
+    updateSessionAggregates(db, "sess-otel");
+
+    const res = await app.request("/api/projects/proj-otel/costs");
+    expect(res.status).toBe(200);
+    const data = await res.json() as any[];
+    expect(data.length).toBe(1);
+    const row = data[0];
+    expect(row.cost_usd).toBeCloseTo(0.01, 6);
+  });
+
+  test("GET /api/projects/:id/costs uses token-based cost when OTEL is partial", async () => {
+    insertEvent(db, {
+      id: "e-proj-partial-1", sessionId: "sess-otel", type: "assistant", timestamp: "2026-03-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6", inputTokens: 1000000, outputTokens: 0,
+      cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0,
+    });
+    insertEvent(db, {
+      id: "e-proj-partial-2", sessionId: "sess-otel", type: "assistant", timestamp: "2026-03-01T01:00:00.000Z",
+      model: "claude-sonnet-4-6", inputTokens: 1000000, outputTokens: 0,
+      cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0,
+    });
+    db.run("UPDATE events SET otel_cost_usd = 0.5 WHERE id = 'e-proj-partial-1'");
+    updateSessionAggregates(db, "sess-otel");
+
+    const res = await app.request("/api/projects/proj-otel/costs");
+    expect(res.status).toBe(200);
+    const data = await res.json() as any[];
+    expect(data.length).toBe(1);
+    const row = data[0];
+    // Partial OTEL: fall back to token-based
+    expect(row.otel_event_count).toBe(1);
+    expect(row.event_count).toBe(2);
+    expect(row.cost_usd).toBeCloseTo(6, 4);
   });
 });

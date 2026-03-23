@@ -1,6 +1,7 @@
 // src/server/otel/receiver.ts
 import type { Hono } from "hono";
 import type { Database } from "bun:sqlite";
+import { updateSessionAggregates } from "../db/queries";
 
 export function createOtelRoutes(app: Hono, db: Database): void {
   // Accept OTLP HTTP/JSON log exports
@@ -59,7 +60,7 @@ function processLogRecord(db: Database, record: any): void {
       // Find closest matching event by session + timestamp (within 5s window)
       const existing = db.query(`
         SELECT id FROM events
-        WHERE session_id = ? AND model = ? AND cost_usd IS NULL
+        WHERE session_id = ? AND model = ? AND otel_cost_usd IS NULL
           AND abs(julianday(timestamp) - julianday(?)) * 86400 < 5
         ORDER BY abs(julianday(timestamp) - julianday(?))
         LIMIT 1
@@ -67,9 +68,10 @@ function processLogRecord(db: Database, record: any): void {
 
       if (existing) {
         db.run(
-          "UPDATE events SET cost_usd = ?, duration_ms = ? WHERE id = ?",
+          "UPDATE events SET otel_cost_usd = ?, duration_ms = ? WHERE id = ?",
           [costUsd, durationMs, existing.id]
         );
+        updateSessionAggregates(db, sessionId);
         return;
       }
     }

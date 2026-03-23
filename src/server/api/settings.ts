@@ -3,7 +3,7 @@ import type { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { getAllSettings, upsertSettings, deleteSettings, deleteAllSettings } from "../db/settings";
 import { getDefaults, validateSetting } from "../../shared/settings-defaults";
-import { invalidatePricingCache } from "../../shared/pricing";
+import { loadPricingFromSettings } from "../db/pricing-loader";
 
 export function createSettingsRoutes(app: Hono, db: Database): void {
   // GET — return all defaults merged with user overrides
@@ -30,9 +30,9 @@ export function createSettingsRoutes(app: Hono, db: Database): void {
 
     upsertSettings(db, body);
 
-    // Invalidate pricing cache if pricing was updated
+    // Reload pricing from DB if pricing was updated
     if ("pricing.models" in body) {
-      invalidatePricingCache();
+      loadPricingFromSettings(db);
     }
 
     const defaults = getDefaults();
@@ -51,8 +51,8 @@ export function createSettingsRoutes(app: Hono, db: Database): void {
       deleteAllSettings(db);
     }
 
-    // Always invalidate pricing cache on reset
-    invalidatePricingCache();
+    // Reload pricing from DB after reset (resets to defaults since keys were deleted)
+    loadPricingFromSettings(db);
 
     // Return merged settings so client can update without a follow-up GET
     const defaults = getDefaults();

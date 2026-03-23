@@ -17,10 +17,10 @@ export interface TokenUsage {
 // Pricing as of March 2026 — update when new models launch
 export const PRICING: Record<string, ModelPricing> = {
   "claude-opus-4-6": {
-    inputPerMToken: 15,
-    outputPerMToken: 75,
-    cacheReadPerMToken: 1.5,
-    cacheWritePerMToken: 18.75,
+    inputPerMToken: 5,
+    outputPerMToken: 25,
+    cacheReadPerMToken: 0.5,
+    cacheWritePerMToken: 6.25,
   },
   "claude-sonnet-4-6": {
     inputPerMToken: 3,
@@ -80,7 +80,7 @@ export function isPricingDirty(): boolean { return _pricingDirty; }
 export function invalidatePricingCache(): void {
   for (const key of Object.keys(PRICING)) delete (PRICING as any)[key];
   Object.assign(PRICING, {
-    "claude-opus-4-6": { inputPerMToken: 15, outputPerMToken: 75, cacheReadPerMToken: 1.5, cacheWritePerMToken: 18.75 },
+    "claude-opus-4-6": { inputPerMToken: 5, outputPerMToken: 25, cacheReadPerMToken: 0.5, cacheWritePerMToken: 6.25 },
     "claude-sonnet-4-6": { inputPerMToken: 3, outputPerMToken: 15, cacheReadPerMToken: 0.3, cacheWritePerMToken: 3.75 },
     "claude-haiku-4-5": { inputPerMToken: 0.80, outputPerMToken: 4, cacheReadPerMToken: 0.08, cacheWritePerMToken: 1 },
   });

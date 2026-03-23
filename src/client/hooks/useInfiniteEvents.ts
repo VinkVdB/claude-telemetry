@@ -86,6 +86,7 @@ export function useInfiniteEvents(
 
       const MAX_EMPTY_RETRIES = 10;
       let currentOffset = pageOffset;
+      let didSetEvents = false;
 
       try {
         for (let attempt = 0; attempt <= MAX_EMPTY_RETRIES; attempt++) {
@@ -108,6 +109,7 @@ export function useInfiniteEvents(
 
           if (mode === "replace") {
             setEvents(result.events);
+            didSetEvents = true;
             baseOffsetRef.current = currentOffset;
             setOffset(currentOffset);
           } else if (mode === "append") {
@@ -130,6 +132,10 @@ export function useInfiniteEvents(
           }
 
           break;
+        }
+        // Replace mode with no results — clear stale events so the list doesn't show the previous selection
+        if (mode === "replace" && !didSetEvents && !controller.signal.aborted) {
+          setEvents([]);
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;

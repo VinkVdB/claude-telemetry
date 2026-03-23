@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import type { Database } from "bun:sqlite";
-import { listSessions, getSession, getSessionCostBreakdown } from "../db/queries";
+import { listSessions, getSession, getSessionCostBreakdown, listAgentSummaries } from "../db/queries";
 
 export function createSessionRoutes(app: Hono, db: Database): void {
   app.get("/api/sessions", (c) => {
@@ -18,5 +18,10 @@ export function createSessionRoutes(app: Hono, db: Database): void {
   app.get("/api/sessions/:id/costs", (c) => {
     const id = c.req.param("id");
     return c.json(getSessionCostBreakdown(db, id));
+  });
+
+  app.get("/api/sessions/:id/agent-summaries", (c) => {
+    const id = c.req.param("id");
+    return c.json(listAgentSummaries(db, id));
   });
 }

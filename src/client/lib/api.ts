@@ -21,11 +21,26 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function patch<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as any).error || `API error: ${res.status}`);
+  }
+  return res.json();
+}
+
 export const api = {
   projects: {
     list: () => get<Project[]>("/projects"),
     get: (id: string) => get<Project>(`/projects/${encodeURIComponent(id)}`),
     costs: (id: string) => get<CostBreakdown[]>(`/projects/${encodeURIComponent(id)}/costs`),
+    update: (id: string, updates: { name?: string; path?: string }) =>
+      patch<Project>(`/projects/${encodeURIComponent(id)}`, updates),
   },
   sessions: {
     list: (projectId: string) => get<Session[]>(`/sessions?projectId=${encodeURIComponent(projectId)}`),

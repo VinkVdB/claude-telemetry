@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SETTINGS_REGISTRY } from "@shared/settings-defaults";
 import { Tooltip } from "../../components/ui/Tooltip";
+import { useToast } from "../../hooks/useToast";
 
 function NumberField({
   settingKey,
@@ -64,6 +65,7 @@ export function GraphTab() {
   const [local, setLocal] = useState<Record<string, any>>({});
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { showToast, ToastNode } = useToast();
 
   const graphKeys = Object.keys(SETTINGS_REGISTRY).filter((k) => k.startsWith("graph."));
 
@@ -84,6 +86,7 @@ export function GraphTab() {
     try {
       await updateSettings(local);
       setDirty(false);
+      showToast("Settings saved");
     } catch (e: any) {
       setError(e.message);
     }
@@ -219,6 +222,7 @@ export function GraphTab() {
           Reset to Defaults
         </button>
       </div>
+      {ToastNode}
     </div>
   );
 }

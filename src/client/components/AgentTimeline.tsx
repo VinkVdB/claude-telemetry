@@ -160,12 +160,14 @@ export function AgentTimeline({
 
   const toggleAgent = useCallback((id: string | null) => {
     setVisibleAgents(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+      // If this is the only visible agent, clicking it restores all agents
+      if (prev.size === 1 && prev.has(id)) {
+        return new Set(agentSummaries.map(s => s.id));
+      }
+      // Otherwise isolate: show only this agent
+      return new Set([id]);
     });
-  }, []);
+  }, [agentSummaries]);
 
   const hideAll = useCallback(() => setVisibleAgents(new Set()), []);
   const showAll = useCallback(() => {

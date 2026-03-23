@@ -13,15 +13,17 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
 
   const event = extractEventData(parsed);
 
-  // Derive project name from cwd or slug
-  const projectName = deriveProjectName(parsed.cwd, projectSlug);
-  const projectPath = parsed.cwd ?? projectSlug;
+  // Normalize git worktree cwd to the parent project path so worktree sessions
+  // are grouped under the same project as their parent repo.
+  // e.g. /Users/foo/project/.worktrees/my-branch → /Users/foo/project
+  const { effectiveSlug, effectivePath } = resolveProject(parsed.cwd, projectSlug);
+  const projectName = deriveProjectName(effectivePath, effectiveSlug);
 
   // Upsert project
-  upsertProject(db, projectSlug, projectName, projectPath);
+  upsertProject(db, effectiveSlug, projectName, effectivePath);
 
   // Upsert session
-  upsertSession(db, event.sessionId, projectSlug, {
+  upsertSession(db, event.sessionId, effectiveSlug, {
     gitBranch: event.sessionMeta?.gitBranch,
     slug: event.sessionMeta?.slug,
     startedAt: event.timestamp,
@@ -89,6 +91,21 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
   }
 
   return { eventId: event.id, sessionId: event.sessionId, type: event.type };
+}
+
+/** Detect git worktrees and return the canonical project slug + path. */
+function resolveProject(cwd: string | undefined, fallbackSlug: string): { effectiveSlug: string; effectivePath: string } {
+  if (cwd) {
+    // Match /.worktrees/<branch> or /worktrees/<branch> (with optional trailing path)
+    const match = cwd.match(/^(.+?)\/(\.worktrees|worktrees)\/[^/]+(\/.*)?$/);
+    if (match) {
+      const parentPath = match[1];
+      // Convert absolute path to slug: replace every "/" with "-" (leading "/" becomes leading "-")
+      const parentSlug = parentPath.replace(/\//g, "-");
+      return { effectiveSlug: parentSlug, effectivePath: parentPath };
+    }
+  }
+  return { effectiveSlug: fallbackSlug, effectivePath: cwd ?? fallbackSlug };
 }
 
 function deriveProjectName(cwd: string | undefined, projectSlug: string): string {

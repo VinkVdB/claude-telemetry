@@ -15,6 +15,15 @@ export function upsertProject(db: Database, id: string, name: string, path: stri
   );
 }
 
+export function updateProject(db: Database, id: string, updates: { name?: string; path?: string }): void {
+  if (updates.name !== undefined) {
+    db.run("UPDATE projects SET name = ? WHERE id = ?", [updates.name, id]);
+  }
+  if (updates.path !== undefined) {
+    db.run("UPDATE projects SET path = ? WHERE id = ?", [updates.path, id]);
+  }
+}
+
 export function upsertSession(
   db: Database,
   id: string,
@@ -195,18 +204,23 @@ export function listEvents(
   if (filters.model)     { conditions.push("e.model LIKE ?");   params.push(filters.model + "%"); }
   if (filters.toolName)  { conditions.push("e.tool_name = ?");  params.push(filters.toolName); }
 
-  if (filters.agentIds && filters.agentIds.length > 0) {
-    const hasMain = filters.agentIds.includes("__main__");
-    const realIds = filters.agentIds.filter(id => id !== "__main__");
-
-    if (hasMain && realIds.length > 0) {
-      conditions.push(`(e.agent_id IS NULL OR e.agent_id IN (${realIds.map(() => "?").join(",")}))`);
-      params.push(...realIds);
-    } else if (hasMain) {
-      conditions.push("e.agent_id IS NULL");
+  if (filters.agentIds) {
+    if (filters.agentIds.length === 0) {
+      // No agents visible → return nothing
+      conditions.push("1=0");
     } else {
-      conditions.push(`e.agent_id IN (${realIds.map(() => "?").join(",")})`);
-      params.push(...realIds);
+      const hasMain = filters.agentIds.includes("__main__");
+      const realIds = filters.agentIds.filter(id => id !== "__main__");
+
+      if (hasMain && realIds.length > 0) {
+        conditions.push(`(e.agent_id IS NULL OR e.agent_id IN (${realIds.map(() => "?").join(",")}))`);
+        params.push(...realIds);
+      } else if (hasMain) {
+        conditions.push("e.agent_id IS NULL");
+      } else {
+        conditions.push(`e.agent_id IN (${realIds.map(() => "?").join(",")})`);
+        params.push(...realIds);
+      }
     }
   }
 
@@ -310,6 +324,7 @@ export function listAgentSummaries(db: Database, sessionId: string) {
       (SELECT model FROM events WHERE agent_id = a.id AND model IS NOT NULL
        ORDER BY timestamp DESC LIMIT 1) as last_model
     FROM agents a WHERE a.session_id = ?
+      AND (SELECT COUNT(*) FROM events WHERE agent_id = a.id) > 0
 
     ORDER BY started_at ASC
   `).all(sessionId, sessionId, sessionId);

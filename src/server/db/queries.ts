@@ -334,35 +334,25 @@ export function getEventOffsetBySeq(
 export function getProjectCostBreakdown(db: Database, projectId: string) {
   return db.query(`
     SELECT
-      e.model,
-      COUNT(*) as event_count,
-      COALESCE(SUM(e.input_tokens), 0) as input_tokens,
-      COALESCE(SUM(e.output_tokens), 0) as output_tokens,
-      COALESCE(SUM(e.cache_read_tokens), 0) as cache_read_tokens,
-      COALESCE(SUM(e.cache_creation_tokens), 0) as cache_creation_tokens,
-      COALESCE(SUM(e.cost_usd), 0) as cost_usd
-    FROM events e
-    JOIN sessions s ON e.session_id = s.id
-    WHERE s.project_id = ? AND e.model IS NOT NULL
-    GROUP BY e.model
-    ORDER BY cost_usd DESC
+      sc.model,
+      SUM(sc.input_tokens) as input_tokens,
+      SUM(sc.output_tokens) as output_tokens,
+      SUM(sc.cache_read_tokens) as cache_read_tokens,
+      SUM(sc.cache_creation_tokens) as cache_creation_tokens,
+      SUM(sc.otel_cost_usd) as otel_cost_usd,
+      SUM(sc.otel_event_count) as otel_event_count,
+      SUM(sc.event_count) as event_count
+    FROM session_costs sc
+    JOIN sessions s ON sc.session_id = s.id
+    WHERE s.project_id = ?
+    GROUP BY sc.model
+    ORDER BY event_count DESC
   `).all(projectId);
 }
 
 export function getSessionCostBreakdown(db: Database, sessionId: string) {
   return db.query(`
-    SELECT
-      model,
-      COUNT(*) as event_count,
-      COALESCE(SUM(input_tokens), 0) as input_tokens,
-      COALESCE(SUM(output_tokens), 0) as output_tokens,
-      COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
-      COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
-      COALESCE(SUM(cost_usd), 0) as cost_usd
-    FROM events
-    WHERE session_id = ? AND model IS NOT NULL
-    GROUP BY model
-    ORDER BY cost_usd DESC
+    SELECT * FROM session_costs WHERE session_id = ? ORDER BY event_count DESC
   `).all(sessionId);
 }
 

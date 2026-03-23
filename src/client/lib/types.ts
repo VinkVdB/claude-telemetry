@@ -71,3 +71,39 @@ export interface Agent {
   event_count: number;
   total_tokens: number;
 }
+
+/** UI-side filter shape — agentIds may contain null (representing the "main" agent with no agent_id) */
+export interface UIEventFilters {
+  sessionId?: string;
+  type?: string;
+  model?: string;
+  toolName?: string;
+  agentIds?: (string | null)[];
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Wire format sent to POST /api/events/query — no null values in agentIds */
+export interface EventQueryFilters {
+  sessionId?: string;
+  type?: string;
+  model?: string;
+  toolName?: string;
+  agentIds?: string[];  // null replaced by "__main__" sentinel by useInfiniteEvents hook
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Per-agent aggregated summary returned by GET /api/sessions/:id/agent-summaries */
+export interface AgentSummary {
+  id: string | null;
+  agent_type: string | null;
+  description: string | null;
+  started_at: string | null;
+  event_count: number;
+  total_tokens: number;
+  last_active: string | null;
+  last_model: string | null;
+}

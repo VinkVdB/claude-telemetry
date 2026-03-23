@@ -26,5 +26,8 @@ dist/
 # Tooling
 .superpowers/
 
+# Git worktrees
+.worktrees/
+
 # Docker volumes / runtime data
 data/

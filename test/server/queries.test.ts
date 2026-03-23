@@ -2,7 +2,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { applySchema } from "../../src/server/db/schema";
-import { listEvents, listAgentSummaries } from "../../src/server/db/queries";
+import { listEvents, listAgentSummaries, updateSessionAggregates, insertEvent, upsertSession, upsertProject } from "../../src/server/db/queries";
 import { processJsonlLine } from "../../src/server/ingestion/processor";
 
 function seedEvent(db: Database, opts: {
@@ -170,5 +170,131 @@ describe("listAgentSummaries", () => {
   test("returns empty array for session with no agents", () => {
     const summaries = listAgentSummaries(db, "nonexistent-session");
     expect(summaries).toEqual([]);
+  });
+});
+
+describe("updateSessionAggregates — session_costs", () => {
+  let db: Database;
+
+  function seedRawEvent(db: Database, opts: {
+    id: string;
+    sessionId: string;
+    messageId?: string;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  }) {
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, opts.sessionId, "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: opts.id,
+      messageId: opts.messageId,
+      sessionId: opts.sessionId,
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: opts.model ?? "claude-sonnet-4-6",
+      inputTokens: opts.inputTokens ?? 10,
+      outputTokens: opts.outputTokens ?? 5,
+      cacheReadTokens: opts.cacheReadTokens ?? 0,
+      cacheCreationTokens: opts.cacheCreationTokens ?? 0,
+    });
+  }
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    applySchema(db);
+  });
+
+  test("creates session_costs rows with correct model/token data after updateSessionAggregates", () => {
+    seedRawEvent(db, { id: "e1", sessionId: "s1", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 50 });
+    seedRawEvent(db, { id: "e2", sessionId: "s1", model: "claude-haiku-4-5", inputTokens: 30, outputTokens: 10 });
+    updateSessionAggregates(db, "s1");
+
+    const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's1' ORDER BY model").all() as any[];
+    expect(rows.length).toBe(2);
+
+    const haiku = rows.find((r: any) => r.model === "claude-haiku-4-5");
+    const sonnet = rows.find((r: any) => r.model === "claude-sonnet-4-6");
+
+    expect(haiku).toBeDefined();
+    expect(haiku.input_tokens).toBe(30);
+    expect(haiku.output_tokens).toBe(10);
+    expect(haiku.event_count).toBe(1);
+
+    expect(sonnet).toBeDefined();
+    expect(sonnet.input_tokens).toBe(100);
+    expect(sonnet.output_tokens).toBe(50);
+    expect(sonnet.event_count).toBe(1);
+  });
+
+  test("session_costs dedup: two events with same message_id count only the one with higher tokens", () => {
+    // Seed two events with same message_id but different token counts
+    // (bypassing the processor-level dedup by calling insertEvent directly)
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s2", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+
+    // Lower token count (should be deduped away)
+    insertEvent(db, {
+      id: "e-low",
+      messageId: "msg-1",
+      sessionId: "s2",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 10,
+      outputTokens: 5,
+    });
+
+    // Higher token count (should win the dedup)
+    insertEvent(db, {
+      id: "e-high",
+      messageId: "msg-1",
+      sessionId: "s2",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:01.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+
+    updateSessionAggregates(db, "s2");
+
+    const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's2'").all() as any[];
+    expect(rows.length).toBe(1);
+    const row = rows[0] as any;
+    // Only the high-token event should be counted
+    expect(row.input_tokens).toBe(100);
+    expect(row.output_tokens).toBe(50);
+    expect(row.event_count).toBe(1);
+  });
+
+  test("session_costs is rebuilt on each call (no duplicate accumulation)", () => {
+    seedRawEvent(db, { id: "e1", sessionId: "s3", model: "claude-sonnet-4-6", inputTokens: 10, outputTokens: 5 });
+    updateSessionAggregates(db, "s3");
+    updateSessionAggregates(db, "s3");
+
+    const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's3'").all() as any[];
+    expect(rows.length).toBe(1);
+    expect((rows[0] as any).event_count).toBe(1);
+  });
+
+  test("events with null model are excluded from session_costs", () => {
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s4", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: "e-nomodel",
+      sessionId: "s4",
+      type: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: undefined,
+      inputTokens: 10,
+      outputTokens: 5,
+    });
+    updateSessionAggregates(db, "s4");
+
+    const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's4'").all();
+    expect(rows.length).toBe(0);
   });
 });

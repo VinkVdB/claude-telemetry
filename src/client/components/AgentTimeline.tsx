@@ -1,30 +1,20 @@
+// src/client/components/AgentTimeline.tsx
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import type { Event, Agent } from "../lib/types";
+import type { Event, AgentSummary } from "../lib/types";
 import { DetailPanel } from "./DetailPanel";
 import { EventTable } from "./EventTable";
 import { useInfiniteEvents } from "../hooks/useInfiniteEvents";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useSSE } from "../lib/sse";
 import { formatTokens, timeAgo, cn } from "../lib/utils";
 import { useSettings } from "../contexts/SettingsContext";
 
-interface AgentSummary {
-  id: string | null;
-  name: string;
-  description: string | null;
-  color: string;
-  eventCount: number;
-  totalTokens: number;
-  lastActive: string | null;
-  model: string | null;
-}
-
 export function AgentTimeline({
-  agents,
-  events,
+  agentSummaries,
   sessionId,
   refreshSignal,
 }: {
-  agents: Agent[];
-  events: Event[];
+  agentSummaries: AgentSummary[];
   sessionId: string;
   refreshSignal?: number;
 }) {
@@ -39,15 +29,66 @@ export function AgentTimeline({
     timeAgoMinutes: settings["display.timeAgoMinutes"] as number,
     timeAgoHours: settings["display.timeAgoHours"] as number,
   };
-  const [selected, setSelected] = useState<Event | null>(null);
-  const [visibleAgents, setVisibleAgents] = useState<Set<string | null>>(() => {
-    const set = new Set<string | null>([null]);
-    agents.forEach((a) => set.add(a.id));
-    return set;
-  });
 
-  // Paginated event loading from API
-  const hookFilters = useMemo(() => ({ sessionId }), [sessionId]);
+  const [selected, setSelected] = useState<Event | null>(null);
+  const [newEventCount, setNewEventCount] = useState(0);
+
+  // Initialize all agents as visible
+  const [visibleAgents, setVisibleAgents] = useState<Set<string | null>>(
+    () => new Set(agentSummaries.map(s => s.id))
+  );
+
+  // Sync visibleAgents set when agentSummaries changes (e.g. new agent appears)
+  useEffect(() => {
+    setVisibleAgents(prev => {
+      const next = new Set(prev);
+      agentSummaries.forEach(s => next.add(s.id));
+      return next;
+    });
+  }, [agentSummaries]);
+
+  // Color and name maps derived from agentSummaries
+  // Main (id=null) always gets MAIN_COLOR; subagents get AGENT_COLORS by index
+  const summaries = useMemo(() => {
+    return agentSummaries.map((s, i) => ({
+      ...s,
+      color: s.id === null
+        ? MAIN_COLOR
+        : AGENT_COLORS[(i - 1) % AGENT_COLORS.length],  // i-1 because main is index 0
+      name: s.id === null ? "main" : (s.agent_type ?? "agent"),
+    }));
+  }, [agentSummaries, MAIN_COLOR, AGENT_COLORS]);
+
+  const colorMap = useMemo(() => {
+    const map = new Map<string | null, string>();
+    summaries.forEach(s => map.set(s.id, s.color));
+    return map;
+  }, [summaries]);
+
+  const nameMap = useMemo(() => {
+    const map = new Map<string | null, string>();
+    summaries.forEach(s => map.set(s.id, s.name));
+    return map;
+  }, [summaries]);
+
+  // Debounce visible agents -> agentIds filter (150ms to batch rapid show/hide-all clicks)
+  const debouncedVisibleAgents = useDebouncedValue(visibleAgents, 150);
+
+  const hookFilters = useMemo(() => {
+    const allIds = new Set(agentSummaries.map(s => s.id));
+    const allVisible = [...allIds].every(id => debouncedVisibleAgents.has(id));
+
+    if (allVisible) {
+      // No agentIds filter -- return all events for this session
+      return { sessionId };
+    }
+
+    return {
+      sessionId,
+      agentIds: [...debouncedVisibleAgents] as (string | null)[],
+    };
+  }, [sessionId, debouncedVisibleAgents, agentSummaries]);
+
   const {
     events: hookEvents,
     total,
@@ -60,82 +101,40 @@ export function AgentTimeline({
     hasMore,
     hasPrevious,
     jumpTargetEventId,
-  } = useInfiniteEvents({ filters: hookFilters, maxLoadedEvents: settings["display.maxLoadedEvents"] ?? 500 });
+  } = useInfiniteEvents({
+    filters: hookFilters,
+    maxLoadedEvents: settings["display.maxLoadedEvents"] ?? 500,
+  });
 
-  // Refresh infinite scroll when SSE signals new data
+  // Refresh on SSE signal from parent
   const prevRefreshSignal = useRef(refreshSignal);
   useEffect(() => {
     if (refreshSignal !== undefined && refreshSignal !== prevRefreshSignal.current) {
       prevRefreshSignal.current = refreshSignal;
-      scrollToTop();
+      if (offset === 0 && !isLoading) {
+        scrollToTop();
+      } else {
+        setNewEventCount(c => c + 1);
+      }
     }
-  }, [refreshSignal, scrollToTop]);
+  }, [refreshSignal, scrollToTop, offset, isLoading]);
 
-  // Build agent summaries (main + each subagent)
-  const summaries = useMemo<AgentSummary[]>(() => {
-    const mainEvents = events.filter((e) => !e.agent_id);
-    const mainTokens = mainEvents.reduce(
-      (sum, e) => sum + (e.input_tokens ?? 0) + (e.output_tokens ?? 0),
-      0
-    );
-    const mainLastEvent =
-      mainEvents.length > 0
-        ? mainEvents.reduce((latest, e) => (e.timestamp > latest.timestamp ? e : latest)).timestamp
-        : null;
+  // SSE: new event for this session
+  useSSE((_event, data) => {
+    if (data?.sessionId === sessionId) {
+      if (offset === 0 && !isLoading) {
+        scrollToTop();
+      } else {
+        setNewEventCount(c => c + 1);
+      }
+    }
+  });
 
-    const mainModel = mainEvents.find((e) => e.model)?.model ?? null;
+  const handleScrollToTop = () => {
+    scrollToTop();
+    setNewEventCount(0);
+  };
 
-    const main: AgentSummary = {
-      id: null,
-      name: "main",
-      description: null,
-      color: MAIN_COLOR,
-      eventCount: mainEvents.length,
-      totalTokens: mainTokens,
-      lastActive: mainLastEvent,
-      model: mainModel,
-    };
-
-    const agentSummaries: AgentSummary[] = agents.map((agent, i) => {
-      const agentEvents = events.filter((e) => e.agent_id === agent.id);
-      const lastEvent =
-        agentEvents.length > 0
-          ? agentEvents.reduce((latest, e) => (e.timestamp > latest.timestamp ? e : latest))
-              .timestamp
-          : agent.ended_at ?? agent.started_at ?? null;
-
-      const agentModel = agentEvents.find((e) => e.model)?.model ?? null;
-
-      return {
-        id: agent.id,
-        name: agent.agent_type ?? "agent",
-        description: agent.description ?? null,
-        color: AGENT_COLORS[i % AGENT_COLORS.length],
-        eventCount: agentEvents.length,
-        totalTokens: agent.total_tokens,
-        lastActive: lastEvent,
-        model: agentModel,
-      };
-    });
-
-    return [main, ...agentSummaries];
-  }, [agents, events]);
-
-  // Color lookup map
-  const colorMap = useMemo(() => {
-    const map = new Map<string | null, string>();
-    summaries.forEach((s) => map.set(s.id, s.color));
-    return map;
-  }, [summaries]);
-
-  // Name lookup map
-  const nameMap = useMemo(() => {
-    const map = new Map<string | null, string>();
-    summaries.forEach((s) => map.set(s.id, s.name));
-    return map;
-  }, [summaries]);
-
-  // Stable event number map from unfiltered data (event.id → server-side position number)
   const eventNumberMap = useMemo(() => {
     const map = new Map<string, number>();
     hookEvents.forEach((e, i) => {
@@ -144,13 +143,13 @@ export function AgentTimeline({
     return map;
   }, [hookEvents, total, offset]);
 
-  // Auto-enable the agent of the jump target event
+  // Auto-enable agent when jumping to one of its events
   useEffect(() => {
     if (!jumpTargetEventId) return;
-    const targetEvent = hookEvents.find((e) => e.id === jumpTargetEventId);
+    const targetEvent = hookEvents.find(e => e.id === jumpTargetEventId);
     if (targetEvent) {
       const agentId = targetEvent.agent_id ?? null;
-      setVisibleAgents((prev) => {
+      setVisibleAgents(prev => {
         if (prev.has(agentId)) return prev;
         const next = new Set(prev);
         next.add(agentId);
@@ -159,38 +158,22 @@ export function AgentTimeline({
     }
   }, [jumpTargetEventId, hookEvents]);
 
-  // Filter hook events by visible agents
-  const filteredEvents = useMemo(
-    () => hookEvents.filter((e) => visibleAgents.has(e.agent_id ?? null)),
-    [hookEvents, visibleAgents]
-  );
-
   const toggleAgent = useCallback((id: string | null) => {
-    setVisibleAgents((prev) => {
+    setVisibleAgents(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }, []);
 
-  const hideAll = useCallback(() => {
-    setVisibleAgents(new Set());
-  }, []);
-
+  const hideAll = useCallback(() => setVisibleAgents(new Set()), []);
   const showAll = useCallback(() => {
-    const set = new Set<string | null>([null]);
-    agents.forEach((a) => set.add(a.id));
-    setVisibleAgents(set);
-  }, [agents]);
+    setVisibleAgents(new Set(agentSummaries.map(s => s.id)));
+  }, [agentSummaries]);
 
-
-  // Auto-enable an agent when jumping to one of its events
   const autoEnableAgent = useCallback((agentId: string | null) => {
-    setVisibleAgents((prev) => {
+    setVisibleAgents(prev => {
       if (prev.has(agentId)) return prev;
       const next = new Set(prev);
       next.add(agentId);
@@ -200,28 +183,15 @@ export function AgentTimeline({
 
   return (
     <div className="space-y-4">
-      {/* Agent cards (toggleable filters) */}
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm font-semibold text-primary-dark">Agents</span>
         <div className="flex gap-1.5">
-          <button
-            onClick={hideAll}
-            className="text-xs text-muted hover:text-primary-dark border border-border rounded px-2 py-0.5 hover:border-primary transition-colors"
-          >
-            Hide all
-          </button>
-          <button
-            onClick={showAll}
-            className="text-xs text-muted hover:text-primary-dark border border-border rounded px-2 py-0.5 hover:border-primary transition-colors"
-          >
-            Show all
-          </button>
+          <button onClick={hideAll} className="text-xs text-muted hover:text-primary-dark border border-border rounded px-2 py-0.5 hover:border-primary transition-colors">Hide all</button>
+          <button onClick={showAll} className="text-xs text-muted hover:text-primary-dark border border-border rounded px-2 py-0.5 hover:border-primary transition-colors">Show all</button>
         </div>
       </div>
-      <div
-        className="grid gap-3"
-        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(220px, 1fr))` }}
-      >
+
+      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(220px, 1fr))` }}>
         {summaries.map((s) => {
           const active = visibleAgents.has(s.id);
           return (
@@ -230,42 +200,44 @@ export function AgentTimeline({
               onClick={() => toggleAgent(s.id)}
               className={cn(
                 "border rounded-xl bg-white p-3 flex flex-col gap-1 cursor-pointer transition-all select-none",
-                active
-                  ? "border-primary/40 shadow-sm"
-                  : "border-border opacity-50",
+                active ? "border-primary/40 shadow-sm" : "border-border opacity-50",
                 "hover:shadow-md"
               )}
             >
               <div className="flex items-center gap-2">
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: s.color }}
-                />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
                 <span className="text-sm font-semibold text-primary-dark truncate">{s.name}</span>
-                {s.model && (
-                  <span className="text-xs text-muted font-mono ml-auto">{s.model}</span>
+                {s.last_model && (
+                  <span className="text-xs text-muted font-mono ml-auto">{s.last_model.replace("claude-", "")}</span>
                 )}
               </div>
               {s.description && (
-                <p className="text-xs text-muted truncate" title={s.description}>
-                  {s.description}
-                </p>
+                <p className="text-xs text-muted truncate" title={s.description}>{s.description}</p>
               )}
               <div className="flex items-center gap-3 text-xs text-muted mt-1">
-                <span>{s.eventCount} events</span>
-                <span>{formatTokens(s.totalTokens, formatOpts)} tok</span>
-                {s.lastActive && <span className="ml-auto">{timeAgo(s.lastActive, formatOpts)}</span>}
+                <span>{s.event_count} events</span>
+                <span>{formatTokens(s.total_tokens, formatOpts)} tok</span>
+                {s.last_active && <span className="ml-auto">{timeAgo(s.last_active, formatOpts)}</span>}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Main area: EventTable + DetailPanel */}
+      {/* New events banner */}
+      {newEventCount > 0 && (
+        <button
+          onClick={handleScrollToTop}
+          className="w-full py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors"
+        >
+          {newEventCount} new event{newEventCount !== 1 ? "s" : ""} — scroll to top
+        </button>
+      )}
+
       <div className="flex gap-4 items-start">
         <div className="flex-[3] min-w-0">
           <EventTable
-            events={filteredEvents}
+            events={hookEvents}
             total={total}
             isLoading={isLoading}
             onLoadMore={loadMore}
@@ -274,7 +246,7 @@ export function AgentTimeline({
             hasMore={hasMore}
             hasPrevious={hasPrevious}
             onJumpTo={jumpTo}
-            onScrollToTop={scrollToTop}
+            onScrollToTop={handleScrollToTop}
             selected={selected}
             onSelect={setSelected}
             eventNumberMap={eventNumberMap}
@@ -285,8 +257,6 @@ export function AgentTimeline({
             onAutoEnableAgent={autoEnableAgent}
           />
         </div>
-
-        {/* Right: detail panel (sticky) */}
         <div className="flex-[2] min-w-0 sticky top-4 self-start">
           {selected ? (
             <DetailPanel event={selected} onClose={() => setSelected(null)} />

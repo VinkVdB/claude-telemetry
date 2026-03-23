@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SETTINGS_REGISTRY } from "@shared/settings-defaults";
 import { Tooltip } from "../../components/ui/Tooltip";
+import { useToast } from "../../hooks/useToast";
 
 interface ModelRates {
   inputPerMToken: number;
@@ -85,11 +86,14 @@ export function PricingTab() {
     setDirty(true);
   };
 
+  const { showToast, ToastNode } = useToast();
+
   const save = async () => {
     try {
       await updateSettings({ "pricing.models": models });
       setDirty(false);
       setErrors({});
+      showToast("Settings saved");
     } catch (e: any) {
       setErrors((prev) => ({ ...prev, _save: e.message }));
     }
@@ -233,6 +237,7 @@ export function PricingTab() {
           </button>
         </div>
       </div>
+      {ToastNode}
     </div>
   );
 }

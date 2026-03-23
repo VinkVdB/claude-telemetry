@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SETTINGS_REGISTRY } from "@shared/settings-defaults";
 import { Tooltip } from "../../components/ui/Tooltip";
+import { useToast } from "../../hooks/useToast";
 
 const serverKeys = ["server.pollInterval", "server.stabilityThreshold", "server.writePollInterval"] as const;
 
@@ -9,6 +10,7 @@ export function ServerTab() {
   const { settings, updateSettings, resetSettings } = useSettings();
   const [local, setLocal] = useState<Record<string, number>>({});
   const [dirty, setDirty] = useState(false);
+  const { showToast, ToastNode } = useToast();
 
   useEffect(() => {
     const vals: Record<string, number> = {};
@@ -25,6 +27,7 @@ export function ServerTab() {
   const save = async () => {
     await updateSettings(local);
     setDirty(false);
+    showToast("Settings saved");
   };
 
   const reset = async () => {
@@ -80,6 +83,7 @@ export function ServerTab() {
           </button>
         </div>
       </div>
+      {ToastNode}
     </div>
   );
 }

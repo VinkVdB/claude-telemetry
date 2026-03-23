@@ -136,6 +136,7 @@ export function useInfiniteEvents(
     if (isLoading) return;
     const nextOffset = baseOffsetRef.current + events.length;
     if (nextOffset >= total) return;
+    setJumpTargetEventId(null);
     setOffset(nextOffset);
     fetchPage(nextOffset, "append");
   }, [isLoading, events.length, total, fetchPage]);
@@ -144,6 +145,7 @@ export function useInfiniteEvents(
     if (isLoading) return;
     if (baseOffsetRef.current <= 0) return;
     const prevOffset = Math.max(0, baseOffsetRef.current - pageSize);
+    setJumpTargetEventId(null);
     fetchPage(prevOffset, "prepend");
   }, [isLoading, pageSize, fetchPage]);
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SETTINGS_REGISTRY } from "@shared/settings-defaults";
 import { Tooltip } from "../../components/ui/Tooltip";
+import { useToast } from "../../hooks/useToast";
 
 interface SectionConfig {
   title: string;
@@ -39,6 +40,7 @@ export function DisplayTab() {
   const [local, setLocal] = useState<Record<string, number>>({});
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { showToast, ToastNode } = useToast();
 
   useEffect(() => {
     const vals: Record<string, number> = {};
@@ -57,6 +59,7 @@ export function DisplayTab() {
     try {
       await updateSettings(local);
       setDirty(false);
+      showToast("Settings saved");
     } catch (e: any) {
       setError(e.message);
     }
@@ -124,6 +127,7 @@ export function DisplayTab() {
           Save
         </button>
       </div>
+      {ToastNode}
     </div>
   );
 }

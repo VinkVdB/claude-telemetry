@@ -41,7 +41,7 @@ function makeOtelPayload(opts: {
   costUsd: number;
   durationMs: number;
 }) {
-  const timeUnixNano = (new Date(opts.timestamp).getTime() * 1_000_000).toString();
+  const timeUnixNano = (BigInt(new Date(opts.timestamp).getTime()) * 1_000_000n).toString();
   return {
     resourceLogs: [{
       scopeLogs: [{

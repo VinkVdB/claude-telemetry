@@ -50,11 +50,13 @@ function processLogRecord(db: Database, record: any): void {
     // Try to enrich existing event with cost_usd and duration_ms
     const sessionId = attrs["session.id"];
     const costUsd = parseFloat(attrs["cost_usd"] ?? "0");
+    if (isNaN(costUsd)) return; // skip malformed OTEL record
     const durationMs = parseInt(attrs["duration_ms"] ?? "0", 10);
     const model = attrs["model"];
-    const timestamp = record.timeUnixNano
-      ? new Date(parseInt(record.timeUnixNano) / 1_000_000).toISOString()
+    const timestampMs = record.timeUnixNano
+      ? Number(BigInt(record.timeUnixNano) / 1_000_000n)
       : null;
+    const timestamp = timestampMs ? new Date(timestampMs).toISOString() : null;
 
     if (sessionId && timestamp) {
       // Find closest matching event by session + timestamp (within 5s window)

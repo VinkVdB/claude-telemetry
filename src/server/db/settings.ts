@@ -2,7 +2,7 @@
 import type { Database } from "bun:sqlite";
 
 export function getAllSettings(db: Database): Record<string, any> {
-  const rows = db.query("SELECT key, value FROM settings").all() as { key: string; value: string }[];
+  const rows = db.query("SELECT key, value FROM settings WHERE key NOT LIKE 'migration_%'").all() as { key: string; value: string }[];
   const result: Record<string, any> = {};
   for (const row of rows) {
     try { result[row.key] = JSON.parse(row.value); } catch { result[row.key] = row.value; }

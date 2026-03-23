@@ -1,7 +1,6 @@
 // src/server/ingestion/processor.ts
 import type { Database } from "bun:sqlite";
 import { parseJsonlLine, extractEventData } from "./parser";
-import { calculateCost } from "./pricing";
 import { upsertProject, upsertSession, insertEvent, updateSessionAggregates, upsertAgent } from "../db/queries";
 
 export function processJsonlLine(db: Database, rawLine: string, projectSlug: string): { eventId: string; sessionId: string; type: string } | null {
@@ -44,27 +43,16 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
                        (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0);
       if (newTotal <= existing.total) return null; // existing is already the best version
 
-      // Calculate cost for the updated token counts
-      let updatedCost: number | undefined;
-      if (event.model && event.inputTokens != null) {
-        updatedCost = calculateCost(event.model, {
-          inputTokens: event.inputTokens ?? 0,
-          outputTokens: event.outputTokens ?? 0,
-          cacheReadTokens: event.cacheReadTokens ?? 0,
-          cacheCreationTokens: event.cacheCreationTokens ?? 0,
-        });
-      }
-
       // UPDATE the existing row in-place (preserving original UUID/rowid)
       db.run(
         `UPDATE events SET
            input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, cache_creation_tokens = ?,
-           model = COALESCE(?, model), cost_usd = ?, content = COALESCE(?, content)
+           model = COALESCE(?, model), content = COALESCE(?, content)
          WHERE message_id = ?`,
         [
           event.inputTokens ?? null, event.outputTokens ?? null,
           event.cacheReadTokens ?? null, event.cacheCreationTokens ?? null,
-          event.model ?? null, updatedCost ?? null,
+          event.model ?? null,
           event.content ?? null, event.messageId,
         ]
       );
@@ -72,17 +60,6 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
       updateSessionAggregates(db, event.sessionId);
       return null; // skip the normal insert path
     }
-  }
-
-  // Calculate cost if we have token data
-  let costUsd: number | undefined;
-  if (event.model && event.inputTokens != null) {
-    costUsd = calculateCost(event.model, {
-      inputTokens: event.inputTokens ?? 0,
-      outputTokens: event.outputTokens ?? 0,
-      cacheReadTokens: event.cacheReadTokens ?? 0,
-      cacheCreationTokens: event.cacheCreationTokens ?? 0,
-    });
   }
 
   // Insert event
@@ -98,7 +75,7 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
     outputTokens: event.outputTokens,
     cacheReadTokens: event.cacheReadTokens,
     cacheCreationTokens: event.cacheCreationTokens,
-    costUsd: costUsd,
+    costUsd: null,
     toolName: event.toolName,
     stopReason: event.stopReason,
     content: event.content,

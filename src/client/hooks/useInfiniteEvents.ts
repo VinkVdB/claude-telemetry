@@ -20,8 +20,12 @@ export interface UseInfiniteEventsResult {
   isLoading: boolean;
   loadMore: () => void;
   loadPrevious: () => void;
-  jumpTo: (eventNumber: number) => void;
+  jumpTo: (seq: number) => void;
   scrollToTop: () => void;
+  /** Request a reload; coalesces concurrent SSE signals and respects a 500ms post-fetch cooldown */
+  requestReload: () => void;
+  /** Reads baseOffset directly from a ref (no stale-closure risk) — use in SSE handlers */
+  isAtTop: () => boolean;
   offset: number;
   hasMore: boolean;
   hasPrevious: boolean;
@@ -52,6 +56,15 @@ export function useInfiniteEvents(
   const abortRef = useRef<AbortController | null>(null);
   const filtersKeyRef = useRef("");
 
+  // SSE reload debounce state
+  const loadingRef = useRef(false);
+  const shouldReloadAfterFetchRef = useRef(false);
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Keep a stable ref to fetchPage for use inside timers
+  const fetchPageRef = useRef<(pageOffset: number, mode: "replace" | "append" | "prepend") => Promise<void>>(
+    async () => {}
+  );
+
   const fetchPage = useCallback(
     async (
       pageOffset: number,
@@ -62,6 +75,14 @@ export function useInfiniteEvents(
       abortRef.current = controller;
 
       setIsLoading(true);
+      loadingRef.current = true;
+
+      // A new fetch supersedes any pending reload timer — defer the reload until after this fetch
+      if (reloadTimerRef.current) {
+        clearTimeout(reloadTimerRef.current);
+        reloadTimerRef.current = null;
+        shouldReloadAfterFetchRef.current = true;
+      }
 
       const MAX_EMPTY_RETRIES = 10;
       let currentOffset = pageOffset;
@@ -115,19 +136,39 @@ export function useInfiniteEvents(
         if (controller.signal.aborted) return;
         console.error("Failed to fetch events:", err);
       } finally {
-        if (!controller.signal.aborted) setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+          loadingRef.current = false;
+
+          // If a reload was deferred while this fetch was in progress, schedule it after 500ms
+          if (shouldReloadAfterFetchRef.current) {
+            shouldReloadAfterFetchRef.current = false;
+            reloadTimerRef.current = setTimeout(() => {
+              reloadTimerRef.current = null;
+              if (!loadingRef.current) {
+                baseOffsetRef.current = 0;
+                setOffset(0);
+                fetchPageRef.current(0, "replace");
+              }
+            }, 500);
+          }
+        }
       }
     },
-    [filters, pageSize]
+    [filters, pageSize, maxLoadedEvents]
   );
 
+  // Keep fetchPageRef current so timers always call the latest version
+  fetchPageRef.current = fetchPage;
+
   // Initial load + reload when filters change
+  // NOTE: We do NOT call setEvents([]) here — keeping old events visible while
+  // the new page loads prevents the table from collapsing and causing a page-level scroll.
   const filtersKey = JSON.stringify(filters);
   if (filtersKey !== filtersKeyRef.current) {
     filtersKeyRef.current = filtersKey;
     baseOffsetRef.current = 0;
     setOffset(0);
-    setEvents([]);
     setJumpTargetEventId(null);
     fetchPage(0, "replace");
   }
@@ -149,56 +190,107 @@ export function useInfiniteEvents(
     fetchPage(prevOffset, "prepend");
   }, [isLoading, pageSize, fetchPage]);
 
+  /**
+   * Jump to the event identified by `seq` (its SQLite rowid).
+   * Looks up the event's position in the current filtered result set,
+   * then loads the page centered around it.
+   */
   const jumpTo = useCallback(
-    (eventNumber: number) => {
-      const targetOffset = Math.max(0, Math.min(total - eventNumber, total - 1));
-      const windowStart  = Math.max(0, targetOffset - pageSize);
-
-      baseOffsetRef.current = windowStart;
-      setOffset(windowStart);
-      setEvents([]);
-      setJumpTargetEventId(null);
-
-      const windowSize = Math.min(pageSize * 2, total - windowStart);
-      const controller = new AbortController();
+    (seq: number) => {
       if (abortRef.current) abortRef.current.abort();
+      const controller = new AbortController();
       abortRef.current = controller;
-      setIsLoading(true);
 
-      const wireFilters = toWireFilters({ ...filters, limit: windowSize, offset: windowStart });
+      setIsLoading(true);
+      loadingRef.current = true;
+
+      if (reloadTimerRef.current) {
+        clearTimeout(reloadTimerRef.current);
+        reloadTimerRef.current = null;
+        shouldReloadAfterFetchRef.current = true;
+      }
+
+      const wireFilters = toWireFilters(filters);
 
       api.events
-        .query(wireFilters)
-        .then((result) => {
+        .getOffset(seq, wireFilters)
+        .then(({ offset: eventOffset }) => {
           if (controller.signal.aborted) return;
-          setTotal(result.total);
-          setEvents(result.events);
+
+          const windowStart = Math.max(0, eventOffset - Math.floor(pageSize / 2));
           baseOffsetRef.current = windowStart;
-          const indexInWindow = targetOffset - windowStart;
-          const targetEvent = result.events[indexInWindow];
-          setJumpTargetEventId(targetEvent?.id ?? null);
+          setOffset(windowStart);
+
+          return api.events
+            .query({ ...wireFilters, limit: pageSize, offset: windowStart })
+            .then((result) => {
+              if (controller.signal.aborted) return;
+              setTotal(result.total);
+              setEvents(result.events);
+              const targetEvent = result.events.find(e => e.seq === seq);
+              setJumpTargetEventId(targetEvent?.id ?? null);
+            });
         })
         .catch((err) => {
           if (controller.signal.aborted) return;
-          console.error("Failed to fetch events:", err);
+          console.error("Failed to jump to event:", err);
         })
         .finally(() => {
-          if (!controller.signal.aborted) setIsLoading(false);
+          if (!controller.signal.aborted) {
+            setIsLoading(false);
+            loadingRef.current = false;
+
+            if (shouldReloadAfterFetchRef.current) {
+              shouldReloadAfterFetchRef.current = false;
+              reloadTimerRef.current = setTimeout(() => {
+                reloadTimerRef.current = null;
+                if (!loadingRef.current) {
+                  baseOffsetRef.current = 0;
+                  setOffset(0);
+                  fetchPageRef.current(0, "replace");
+                }
+              }, 500);
+            }
+          }
         });
     },
-    [total, pageSize, filters]
+    [filters, pageSize]
   );
 
   const scrollToTop = useCallback(() => {
     baseOffsetRef.current = 0;
     setOffset(0);
-    setEvents([]);
     setJumpTargetEventId(null);
+    // Don't clear events here — prevents the table from collapsing and causing page-level scroll
     fetchPage(0, "replace");
   }, [fetchPage]);
 
+  /**
+   * Request a reload of the top page, coalescing multiple concurrent SSE signals.
+   * - While a fetch is in progress: queues a single reload for after it completes (+500ms)
+   * - Otherwise: schedules a reload in 500ms (debounced — multiple calls collapse into one)
+   */
+  const requestReload = useCallback(() => {
+    if (loadingRef.current) {
+      shouldReloadAfterFetchRef.current = true;
+      return;
+    }
+    // Debounce: cancel any existing timer and reschedule
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      if (!loadingRef.current) {
+        baseOffsetRef.current = 0;
+        setOffset(0);
+        fetchPageRef.current(0, "replace");
+      }
+    }, 500);
+  }, []);
+
   const hasMore     = baseOffsetRef.current + events.length < total;
   const hasPrevious = baseOffsetRef.current > 0;
+  // Reads the ref directly — safe to call inside SSE callbacks without stale-closure risk
+  const isAtTop = useCallback(() => baseOffsetRef.current === 0, []);
 
   return {
     events,
@@ -208,6 +300,8 @@ export function useInfiniteEvents(
     loadPrevious,
     jumpTo,
     scrollToTop,
+    requestReload,
+    isAtTop,
     offset: baseOffsetRef.current,
     hasMore,
     hasPrevious,

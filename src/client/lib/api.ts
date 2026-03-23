@@ -51,6 +51,8 @@ export const api = {
   events: {
     query: (filters: EventQueryFilters) =>
       post<{ events: Event[]; total: number }>("/events/query", filters),
+    getOffset: (seq: number, filters: EventQueryFilters) =>
+      post<{ offset: number }>("/events/offset", { seq, ...filters }),
   },
   agents: {
     list: (sessionId: string) => get<Agent[]>(`/agents/${sessionId}`),

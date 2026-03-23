@@ -41,6 +41,7 @@ export interface Session {
 }
 
 export interface Event {
+  seq: number;  // SQLite rowid — stable DB-assigned sequence number
   id: string;
   session_id: string;
   agent_id: string | null;

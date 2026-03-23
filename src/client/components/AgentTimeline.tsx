@@ -97,6 +97,8 @@ export function AgentTimeline({
     loadPrevious,
     jumpTo,
     scrollToTop,
+    requestReload,
+    isAtTop,
     offset,
     hasMore,
     hasPrevious,
@@ -111,19 +113,19 @@ export function AgentTimeline({
   useEffect(() => {
     if (refreshSignal !== undefined && refreshSignal !== prevRefreshSignal.current) {
       prevRefreshSignal.current = refreshSignal;
-      if (offset === 0 && !isLoading) {
-        scrollToTop();
+      if (isAtTop()) {
+        requestReload();
       } else {
         setNewEventCount(c => c + 1);
       }
     }
-  }, [refreshSignal, scrollToTop, offset, isLoading]);
+  }, [refreshSignal, requestReload, isAtTop]);
 
-  // SSE: new event for this session
+  // SSE: new event for this session — use isAtTop() to avoid stale-closure offset reads
   useSSE((_event, data) => {
     if (data?.sessionId === sessionId) {
-      if (offset === 0 && !isLoading) {
-        scrollToTop();
+      if (isAtTop()) {
+        requestReload();
       } else {
         setNewEventCount(c => c + 1);
       }
@@ -137,11 +139,9 @@ export function AgentTimeline({
 
   const eventNumberMap = useMemo(() => {
     const map = new Map<string, number>();
-    hookEvents.forEach((e, i) => {
-      map.set(e.id, total - offset - i);
-    });
+    hookEvents.forEach(e => map.set(e.id, e.seq));
     return map;
-  }, [hookEvents, total, offset]);
+  }, [hookEvents]);
 
   // Auto-enable agent when jumping to one of its events
   useEffect(() => {
@@ -160,14 +160,12 @@ export function AgentTimeline({
 
   const toggleAgent = useCallback((id: string | null) => {
     setVisibleAgents(prev => {
-      // If this is the only visible agent, clicking it restores all agents
-      if (prev.size === 1 && prev.has(id)) {
-        return new Set(agentSummaries.map(s => s.id));
-      }
-      // Otherwise isolate: show only this agent
-      return new Set([id]);
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-  }, [agentSummaries]);
+  }, []);
 
   const hideAll = useCallback(() => setVisibleAgents(new Set()), []);
   const showAll = useCallback(() => {

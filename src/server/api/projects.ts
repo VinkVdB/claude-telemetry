@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { listProjects, getProject, getProjectCostBreakdown, updateProject } from "../db/queries";
+import { applyOtelCost } from "./sessions";
 
 export function createApiRoutes(app: Hono, db: Database): void {
   app.get("/api/projects", (c) => {
@@ -15,7 +16,8 @@ export function createApiRoutes(app: Hono, db: Database): void {
 
   app.get("/api/projects/:id/costs", (c) => {
     const id = c.req.param("id");
-    return c.json(getProjectCostBreakdown(db, id));
+    const rows = getProjectCostBreakdown(db, id) as any[];
+    return c.json(rows.map(applyOtelCost));
   });
 
   app.patch("/api/projects/:id", async (c) => {

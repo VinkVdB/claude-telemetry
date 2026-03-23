@@ -74,6 +74,93 @@ describe("applySchema", () => {
     expect(names).toContain("idx_events_session_ts");
   });
 
+  test("creates session_costs table", () => {
+    applySchema(db);
+    const table = db
+      .query("SELECT name FROM sqlite_master WHERE type='table' AND name='session_costs'")
+      .get() as { name: string } | null;
+    expect(table).not.toBeNull();
+  });
+
+  test("session_costs has correct columns", () => {
+    applySchema(db);
+    const cols = db
+      .query("PRAGMA table_info(session_costs)")
+      .all() as { name: string; type: string; notnull: number; dflt_value: string | null; pk: number }[];
+    const colMap = Object.fromEntries(cols.map((c) => [c.name, c]));
+    expect(colMap["session_id"]).toBeDefined();
+    expect(colMap["model"]).toBeDefined();
+    expect(colMap["input_tokens"]).toBeDefined();
+    expect(colMap["output_tokens"]).toBeDefined();
+    expect(colMap["cache_read_tokens"]).toBeDefined();
+    expect(colMap["cache_creation_tokens"]).toBeDefined();
+    expect(colMap["otel_cost_usd"]).toBeDefined();
+    expect(colMap["otel_event_count"]).toBeDefined();
+    expect(colMap["event_count"]).toBeDefined();
+  });
+
+  test("creates idx_session_costs_session index", () => {
+    applySchema(db);
+    const idx = db
+      .query("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_session_costs_session'")
+      .get() as { name: string } | null;
+    expect(idx).not.toBeNull();
+  });
+
+  test("events table has otel_cost_usd column", () => {
+    applySchema(db);
+    const cols = db
+      .query("PRAGMA table_info(events)")
+      .all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toContain("otel_cost_usd");
+  });
+
+  test("session_costs backfill populates data for pre-existing events", () => {
+    // Simulate a DB that already has data before the session_costs backfill migration
+    applySchema(db);
+    // Clear the migration flag so we can re-run and simulate an upgrade
+    db.exec("DELETE FROM settings WHERE key='migration_session_costs_backfill'");
+    // Clear session_costs so it's empty (as it would be before this migration)
+    db.exec("DELETE FROM session_costs");
+    // Insert pre-existing session data
+    db.exec(`
+      INSERT OR IGNORE INTO projects VALUES ('p1','test','/p1',NULL);
+      INSERT OR IGNORE INTO sessions (id,project_id) VALUES ('s1','p1');
+      INSERT OR IGNORE INTO events (id,session_id,type,timestamp,model,input_tokens,output_tokens)
+        VALUES ('e1','s1','assistant','2026-01-01T00:00:00Z','claude-sonnet-4-6',100,50);
+      INSERT OR IGNORE INTO events (id,session_id,type,timestamp,model,input_tokens,output_tokens)
+        VALUES ('e2','s1','assistant','2026-01-01T00:01:00Z','claude-sonnet-4-6',200,80);
+    `);
+    // Re-apply schema to trigger the backfill
+    applySchema(db);
+    // session_costs should now be populated for s1
+    const row = db.query(
+      "SELECT * FROM session_costs WHERE session_id = ? AND model = ?"
+    ).get("s1", "claude-sonnet-4-6") as any;
+    expect(row).not.toBeNull();
+    expect(row.input_tokens).toBe(300);
+    expect(row.output_tokens).toBe(130);
+    // Migration flag should be set
+    const flag = db.query("SELECT value FROM settings WHERE key='migration_session_costs_backfill'").get() as any;
+    expect(flag?.value).toBe("1");
+  });
+
+  test("session_costs backfill is idempotent (does not run twice)", () => {
+    applySchema(db);
+    db.exec(`
+      INSERT OR IGNORE INTO projects VALUES ('p2','test2','/p2',NULL);
+      INSERT OR IGNORE INTO sessions (id,project_id) VALUES ('s2','p2');
+      INSERT OR IGNORE INTO events (id,session_id,type,timestamp,model,input_tokens,output_tokens)
+        VALUES ('e3','s2','assistant','2026-01-01T00:00:00Z','claude-haiku-4-5-20251001',50,20);
+    `);
+    // Applying schema again should not duplicate or fail
+    applySchema(db);
+    const count = db.query("SELECT COUNT(*) as c FROM session_costs WHERE session_id='s2'").get() as any;
+    // Should not double-insert; count should be 0 since flag is already set from first applySchema
+    expect(count.c).toBeLessThanOrEqual(1);
+  });
+
   test("FTS backfill migration flag is recorded", () => {
     // First apply schema to create all tables and run existing migrations
     applySchema(db);

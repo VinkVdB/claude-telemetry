@@ -1,6 +1,7 @@
 // src/server/otel/receiver.ts
 import type { Hono } from "hono";
 import type { Database } from "bun:sqlite";
+import { updateSessionAggregates } from "../db/queries";
 
 export function createOtelRoutes(app: Hono, db: Database): void {
   // Accept OTLP HTTP/JSON log exports
@@ -46,20 +47,23 @@ function processLogRecord(db: Database, record: any): void {
   const eventName = attrs["event.name"] ?? record.severityText;
 
   if (eventName === "claude_code.api_request") {
-    // Try to enrich existing event with cost_usd and duration_ms
+    // Enrich existing event with OTEL-actual cost and duration
     const sessionId = attrs["session.id"];
-    const costUsd = parseFloat(attrs["cost_usd"] ?? "0");
+    if (!attrs["cost_usd"]) return; // skip records without cost data
+    const costUsd = parseFloat(attrs["cost_usd"]);
+    if (isNaN(costUsd)) return;
     const durationMs = parseInt(attrs["duration_ms"] ?? "0", 10);
     const model = attrs["model"];
-    const timestamp = record.timeUnixNano
-      ? new Date(parseInt(record.timeUnixNano) / 1_000_000).toISOString()
+    const timestampMs = record.timeUnixNano
+      ? Number(BigInt(record.timeUnixNano) / 1_000_000n)
       : null;
+    const timestamp = timestampMs ? new Date(timestampMs).toISOString() : null;
 
     if (sessionId && timestamp) {
       // Find closest matching event by session + timestamp (within 5s window)
       const existing = db.query(`
         SELECT id FROM events
-        WHERE session_id = ? AND model = ? AND cost_usd IS NULL
+        WHERE session_id = ? AND model = ? AND otel_cost_usd IS NULL
           AND abs(julianday(timestamp) - julianday(?)) * 86400 < 5
         ORDER BY abs(julianday(timestamp) - julianday(?))
         LIMIT 1
@@ -67,9 +71,10 @@ function processLogRecord(db: Database, record: any): void {
 
       if (existing) {
         db.run(
-          "UPDATE events SET cost_usd = ?, duration_ms = ? WHERE id = ?",
+          "UPDATE events SET otel_cost_usd = ?, duration_ms = ? WHERE id = ?",
           [costUsd, durationMs, existing.id]
         );
+        updateSessionAggregates(db, sessionId);
         return;
       }
     }

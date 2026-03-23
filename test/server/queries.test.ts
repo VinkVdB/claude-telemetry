@@ -2,7 +2,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { applySchema } from "../../src/server/db/schema";
-import { listEvents, listAgentSummaries } from "../../src/server/db/queries";
+import { listEvents, listAgentSummaries, updateSessionAggregates, insertEvent, upsertSession, upsertProject, getSessionCostBreakdown, getProjectCostBreakdown } from "../../src/server/db/queries";
 import { processJsonlLine } from "../../src/server/ingestion/processor";
 
 function seedEvent(db: Database, opts: {
@@ -170,5 +170,364 @@ describe("listAgentSummaries", () => {
   test("returns empty array for session with no agents", () => {
     const summaries = listAgentSummaries(db, "nonexistent-session");
     expect(summaries).toEqual([]);
+  });
+});
+
+describe("updateSessionAggregates — session_costs", () => {
+  let db: Database;
+
+  function seedRawEvent(db: Database, opts: {
+    id: string;
+    sessionId: string;
+    messageId?: string;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  }) {
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, opts.sessionId, "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: opts.id,
+      messageId: opts.messageId,
+      sessionId: opts.sessionId,
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: opts.model ?? "claude-sonnet-4-6",
+      inputTokens: opts.inputTokens ?? 10,
+      outputTokens: opts.outputTokens ?? 5,
+      cacheReadTokens: opts.cacheReadTokens ?? 0,
+      cacheCreationTokens: opts.cacheCreationTokens ?? 0,
+    });
+  }
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    applySchema(db);
+  });
+
+  test("creates session_costs rows with correct model/token data after updateSessionAggregates", () => {
+    seedRawEvent(db, { id: "e1", sessionId: "s1", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 50 });
+    seedRawEvent(db, { id: "e2", sessionId: "s1", model: "claude-haiku-4-5", inputTokens: 30, outputTokens: 10 });
+    updateSessionAggregates(db, "s1");
+
+    const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's1' ORDER BY model").all() as any[];
+    expect(rows.length).toBe(2);
+
+    const haiku = rows.find((r: any) => r.model === "claude-haiku-4-5");
+    const sonnet = rows.find((r: any) => r.model === "claude-sonnet-4-6");
+
+    expect(haiku).toBeDefined();
+    expect(haiku.input_tokens).toBe(30);
+    expect(haiku.output_tokens).toBe(10);
+    expect(haiku.event_count).toBe(1);
+
+    expect(sonnet).toBeDefined();
+    expect(sonnet.input_tokens).toBe(100);
+    expect(sonnet.output_tokens).toBe(50);
+    expect(sonnet.event_count).toBe(1);
+  });
+
+  test("session_costs dedup: two events with same message_id count only the one with higher tokens", () => {
+    // Seed two events with same message_id but different token counts
+    // (bypassing the processor-level dedup by calling insertEvent directly)
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s2", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+
+    // Lower token count (should be deduped away)
+    insertEvent(db, {
+      id: "e-low",
+      messageId: "msg-1",
+      sessionId: "s2",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 10,
+      outputTokens: 5,
+    });
+
+    // Higher token count (should win the dedup)
+    insertEvent(db, {
+      id: "e-high",
+      messageId: "msg-1",
+      sessionId: "s2",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:01.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+
+    updateSessionAggregates(db, "s2");
+
+    const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's2'").all() as any[];
+    expect(rows.length).toBe(1);
+    const row = rows[0] as any;
+    // Only the high-token event should be counted
+    expect(row.input_tokens).toBe(100);
+    expect(row.output_tokens).toBe(50);
+    expect(row.event_count).toBe(1);
+  });
+
+  test("session_costs is rebuilt on each call (no duplicate accumulation)", () => {
+    seedRawEvent(db, { id: "e1", sessionId: "s3", model: "claude-sonnet-4-6", inputTokens: 10, outputTokens: 5 });
+    updateSessionAggregates(db, "s3");
+    updateSessionAggregates(db, "s3");
+
+    const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's3'").all() as any[];
+    expect(rows.length).toBe(1);
+    expect((rows[0] as any).event_count).toBe(1);
+  });
+
+  test("events with null model are excluded from session_costs", () => {
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s4", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: "e-nomodel",
+      sessionId: "s4",
+      type: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: undefined,
+      inputTokens: 10,
+      outputTokens: 5,
+    });
+    updateSessionAggregates(db, "s4");
+
+    const rows = db.query("SELECT * FROM session_costs WHERE session_id = 's4'").all();
+    expect(rows.length).toBe(0);
+  });
+
+  test("total_cost_usd is computed from token-based pricing (non-zero)", () => {
+    // claude-sonnet-4-6: $3/M input, $15/M output
+    // 1_000_000 input tokens = $3, 1_000_000 output tokens = $15 → total $18
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s5", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: "e5",
+      sessionId: "s5",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    updateSessionAggregates(db, "s5");
+
+    const session = db.query("SELECT total_cost_usd FROM sessions WHERE id = 's5'").get() as any;
+    expect(session.total_cost_usd).toBeCloseTo(18, 6);
+  });
+
+  test("total_cost_usd is computed from OTEL cost when all events have otel data", () => {
+    // Insert an event with otel_cost_usd set directly
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s6", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: "e6",
+      sessionId: "s6",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    // Set otel_cost_usd directly to simulate OTEL enrichment
+    db.run("UPDATE events SET otel_cost_usd = 0.42 WHERE id = 'e6'");
+    updateSessionAggregates(db, "s6");
+
+    const session = db.query("SELECT total_cost_usd FROM sessions WHERE id = 's6'").get() as any;
+    // otel_event_count (1) === event_count (1), so OTEL cost should be used
+    expect(session.total_cost_usd).toBeCloseTo(0.42, 6);
+  });
+
+  test("total_cost_usd falls back to token pricing when OTEL is incomplete", () => {
+    // Two events, only one has otel_cost_usd → partial OTEL → token pricing used
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, "s7", "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: "e7a",
+      sessionId: "s7",
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    insertEvent(db, {
+      id: "e7b",
+      sessionId: "s7",
+      type: "assistant",
+      timestamp: "2026-01-01T00:01:00.000Z",
+      model: "claude-sonnet-4-6",
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    // Only one of two events has OTEL data → incomplete
+    db.run("UPDATE events SET otel_cost_usd = 999 WHERE id = 'e7a'");
+    updateSessionAggregates(db, "s7");
+
+    // Token pricing: 2M input * $3/M = $6
+    const session = db.query("SELECT total_cost_usd FROM sessions WHERE id = 's7'").get() as any;
+    expect(session.total_cost_usd).toBeCloseTo(6, 6);
+  });
+});
+
+describe("getSessionCostBreakdown", () => {
+  let db: Database;
+
+  function seedRawEvent(opts: {
+    id: string;
+    sessionId: string;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  }) {
+    upsertProject(db, "-test-project", "test-project", "/test/project");
+    upsertSession(db, opts.sessionId, "-test-project", { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: opts.id,
+      sessionId: opts.sessionId,
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: opts.model ?? "claude-sonnet-4-6",
+      inputTokens: opts.inputTokens ?? 10,
+      outputTokens: opts.outputTokens ?? 5,
+      cacheReadTokens: opts.cacheReadTokens ?? 0,
+      cacheCreationTokens: opts.cacheCreationTokens ?? 0,
+    });
+  }
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    applySchema(db);
+  });
+
+  test("returns per-model rows for a session", () => {
+    seedRawEvent({ id: "e1", sessionId: "s1", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 50 });
+    seedRawEvent({ id: "e2", sessionId: "s1", model: "claude-haiku-4-5", inputTokens: 30, outputTokens: 10 });
+    updateSessionAggregates(db, "s1");
+
+    const rows = getSessionCostBreakdown(db, "s1") as any[];
+    expect(rows.length).toBe(2);
+
+    const sonnet = rows.find(r => r.model === "claude-sonnet-4-6");
+    const haiku  = rows.find(r => r.model === "claude-haiku-4-5");
+
+    expect(sonnet).toBeDefined();
+    expect(sonnet.input_tokens).toBe(100);
+    expect(sonnet.output_tokens).toBe(50);
+    expect(sonnet.event_count).toBe(1);
+
+    expect(haiku).toBeDefined();
+    expect(haiku.input_tokens).toBe(30);
+    expect(haiku.output_tokens).toBe(10);
+    expect(haiku.event_count).toBe(1);
+  });
+
+  test("returns empty array for session with no cost data", () => {
+    const rows = getSessionCostBreakdown(db, "nonexistent") as any[];
+    expect(rows).toEqual([]);
+  });
+
+  test("does not return rows for a different session", () => {
+    seedRawEvent({ id: "e1", sessionId: "s1", model: "claude-sonnet-4-6", inputTokens: 10, outputTokens: 5 });
+    seedRawEvent({ id: "e2", sessionId: "s2", model: "claude-haiku-4-5", inputTokens: 20, outputTokens: 8 });
+    updateSessionAggregates(db, "s1");
+    updateSessionAggregates(db, "s2");
+
+    const rows = getSessionCostBreakdown(db, "s1") as any[];
+    expect(rows.length).toBe(1);
+    expect(rows[0].model).toBe("claude-sonnet-4-6");
+  });
+});
+
+describe("getProjectCostBreakdown", () => {
+  let db: Database;
+
+  function seedRawEvent(opts: {
+    id: string;
+    sessionId: string;
+    projectId: string;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+  }) {
+    upsertProject(db, opts.projectId, "test-project", "/test/project");
+    upsertSession(db, opts.sessionId, opts.projectId, { startedAt: "2026-01-01T00:00:00.000Z" });
+    insertEvent(db, {
+      id: opts.id,
+      sessionId: opts.sessionId,
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      model: opts.model ?? "claude-sonnet-4-6",
+      inputTokens: opts.inputTokens ?? 10,
+      outputTokens: opts.outputTokens ?? 5,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+  }
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    applySchema(db);
+  });
+
+  test("aggregates tokens across sessions for the same project", () => {
+    // Two sessions, same model
+    seedRawEvent({ id: "e1", sessionId: "s1", projectId: "p1", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 50 });
+    seedRawEvent({ id: "e2", sessionId: "s2", projectId: "p1", model: "claude-sonnet-4-6", inputTokens: 200, outputTokens: 80 });
+    updateSessionAggregates(db, "s1");
+    updateSessionAggregates(db, "s2");
+
+    const rows = getProjectCostBreakdown(db, "p1") as any[];
+    expect(rows.length).toBe(1);
+    const sonnet = rows[0] as any;
+    expect(sonnet.model).toBe("claude-sonnet-4-6");
+    expect(sonnet.input_tokens).toBe(300);
+    expect(sonnet.output_tokens).toBe(130);
+    expect(sonnet.event_count).toBe(2);
+  });
+
+  test("returns one row per model across sessions", () => {
+    seedRawEvent({ id: "e1", sessionId: "s1", projectId: "p2", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 50 });
+    seedRawEvent({ id: "e2", sessionId: "s1", projectId: "p2", model: "claude-haiku-4-5", inputTokens: 30, outputTokens: 10 });
+    seedRawEvent({ id: "e3", sessionId: "s2", projectId: "p2", model: "claude-haiku-4-5", inputTokens: 20, outputTokens: 8 });
+    updateSessionAggregates(db, "s1");
+    updateSessionAggregates(db, "s2");
+
+    const rows = getProjectCostBreakdown(db, "p2") as any[];
+    expect(rows.length).toBe(2);
+
+    const haiku = rows.find((r: any) => r.model === "claude-haiku-4-5") as any;
+    expect(haiku).toBeDefined();
+    expect(haiku.input_tokens).toBe(50);
+    expect(haiku.output_tokens).toBe(18);
+    expect(haiku.event_count).toBe(2);
+  });
+
+  test("returns empty array for unknown project", () => {
+    const rows = getProjectCostBreakdown(db, "nonexistent") as any[];
+    expect(rows).toEqual([]);
+  });
+
+  test("does not leak data across projects", () => {
+    seedRawEvent({ id: "e1", sessionId: "s1", projectId: "p1", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 50 });
+    seedRawEvent({ id: "e2", sessionId: "s2", projectId: "p2", model: "claude-haiku-4-5", inputTokens: 30, outputTokens: 10 });
+    updateSessionAggregates(db, "s1");
+    updateSessionAggregates(db, "s2");
+
+    const rows = getProjectCostBreakdown(db, "p1") as any[];
+    expect(rows.length).toBe(1);
+    expect(rows[0].model).toBe("claude-sonnet-4-6");
   });
 });

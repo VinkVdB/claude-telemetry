@@ -1,7 +1,6 @@
 // src/server/ingestion/processor.ts
 import type { Database } from "bun:sqlite";
 import { parseJsonlLine, extractEventData } from "./parser";
-import { calculateCost } from "./pricing";
 import { upsertProject, upsertSession, insertEvent, updateSessionAggregates, upsertAgent } from "../db/queries";
 
 export function processJsonlLine(db: Database, rawLine: string, projectSlug: string): { eventId: string; sessionId: string; type: string } | null {
@@ -32,6 +31,8 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
   // Deduplicate by message.id: one API response can produce multiple JSONL lines with different
   // UUIDs but identical token usage (e.g. text + tool_use blocks). Keep only the entry with the
   // highest total token count (the final non-streaming entry).
+  // We UPDATE in-place (preserving the original UUID/rowid) rather than deleting, so that
+  // referential integrity and FTS triggers remain consistent.
   if (event.messageId) {
     const existing = db.query(
       `SELECT id, COALESCE(input_tokens,0)+COALESCE(output_tokens,0)+COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0) as total
@@ -41,19 +42,24 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
       const newTotal = (event.inputTokens ?? 0) + (event.outputTokens ?? 0) +
                        (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0);
       if (newTotal <= existing.total) return null; // existing is already the best version
-      db.run("DELETE FROM events WHERE message_id = ?", [event.messageId]);
-    }
-  }
 
-  // Calculate cost if we have token data
-  let costUsd: number | undefined;
-  if (event.model && event.inputTokens != null) {
-    costUsd = calculateCost(event.model, {
-      inputTokens: event.inputTokens ?? 0,
-      outputTokens: event.outputTokens ?? 0,
-      cacheReadTokens: event.cacheReadTokens ?? 0,
-      cacheCreationTokens: event.cacheCreationTokens ?? 0,
-    });
+      // UPDATE the existing row in-place (preserving original UUID/rowid)
+      db.run(
+        `UPDATE events SET
+           input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, cache_creation_tokens = ?,
+           model = COALESCE(?, model), content = COALESCE(?, content)
+         WHERE message_id = ?`,
+        [
+          event.inputTokens ?? null, event.outputTokens ?? null,
+          event.cacheReadTokens ?? null, event.cacheCreationTokens ?? null,
+          event.model ?? null,
+          event.content ?? null, event.messageId,
+        ]
+      );
+      // Update session aggregates and return the original event's id
+      updateSessionAggregates(db, event.sessionId);
+      return null; // skip the normal insert path
+    }
   }
 
   // Insert event
@@ -69,7 +75,7 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
     outputTokens: event.outputTokens,
     cacheReadTokens: event.cacheReadTokens,
     cacheCreationTokens: event.cacheCreationTokens,
-    costUsd: costUsd,
+    costUsd: null,
     toolName: event.toolName,
     stopReason: event.stopReason,
     content: event.content,

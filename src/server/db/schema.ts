@@ -1,5 +1,6 @@
 // src/server/db/schema.ts
 import { Database } from "bun:sqlite";
+import { updateSessionAggregates } from "./queries";
 
 export function applySchema(db: Database): void {
   db.exec("PRAGMA journal_mode = WAL");
@@ -113,6 +114,27 @@ export function applySchema(db: Database): void {
   // Migration: clean up any NULL-id sessions that slipped in before the guard was added
   db.exec("DELETE FROM sessions WHERE id IS NULL");
 
+  // Migration: add otel_cost_usd column to events for OTEL-reported cost (separate from estimated cost_usd)
+  try { db.exec("ALTER TABLE events ADD COLUMN otel_cost_usd REAL"); } catch { /* column already exists */ }
+
+  // Session costs materialized aggregate table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_costs (
+      session_id            TEXT    NOT NULL,
+      model                 TEXT    NOT NULL,
+      input_tokens          INTEGER NOT NULL DEFAULT 0,
+      output_tokens         INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      otel_cost_usd         REAL,
+      otel_event_count      INTEGER NOT NULL DEFAULT 0,
+      event_count           INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (session_id, model)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session_costs_session ON session_costs(session_id);
+  `);
+
   // FTS5 virtual table for full-text search on raw event JSON
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS events_fts
@@ -137,6 +159,19 @@ export function applySchema(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_events_session_agent ON events(session_id, agent_id);
     CREATE INDEX IF NOT EXISTS idx_events_session_ts    ON events(session_id, timestamp DESC);
   `);
+
+  // Migration: backfill session_costs for existing events (one-time, guarded by flag)
+  const sessionCostsBackfill = db.query("SELECT value FROM settings WHERE key='migration_session_costs_backfill'").get();
+  if (!sessionCostsBackfill) {
+    const sessions = db.query("SELECT DISTINCT session_id FROM events").all() as { session_id: string }[];
+    for (const { session_id } of sessions) {
+      updateSessionAggregates(db, session_id);
+    }
+    db.run(
+      `INSERT INTO settings (key, value) VALUES ('migration_session_costs_backfill', '1')
+       ON CONFLICT(key) DO UPDATE SET value='1'`
+    );
+  }
 
   // FTS backfill — run once on first startup after upgrade (guarded by migration flag)
   const ftsBackfill = db.query("SELECT value FROM settings WHERE key='migration_fts_backfill'").get();

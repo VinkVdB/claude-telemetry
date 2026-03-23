@@ -1,10 +1,23 @@
-import type { Project, Session, Event, Agent, CostBreakdown } from "./types";
+import type { Project, Session, Event, Agent, CostBreakdown, AgentSummary, EventQueryFilters } from "./types";
 
 const BASE = "/api";
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as any).error || `API error: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -18,12 +31,11 @@ export const api = {
     list: (projectId: string) => get<Session[]>(`/sessions?projectId=${encodeURIComponent(projectId)}`),
     get: (id: string) => get<Session>(`/sessions/${id}`),
     costs: (id: string) => get<CostBreakdown[]>(`/sessions/${id}/costs`),
+    agentSummaries: (id: string) => get<AgentSummary[]>(`/sessions/${id}/agent-summaries`),
   },
   events: {
-    list: (params: Record<string, string>) => {
-      const qs = new URLSearchParams(params).toString();
-      return get<{ events: Event[]; total: number }>(`/events?${qs}`);
-    },
+    query: (filters: EventQueryFilters) =>
+      post<{ events: Event[]; total: number }>("/events/query", filters),
   },
   agents: {
     list: (sessionId: string) => get<Agent[]>(`/agents/${sessionId}`),

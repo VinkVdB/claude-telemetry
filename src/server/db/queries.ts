@@ -99,6 +99,32 @@ export function updateSessionAggregates(db: Database, sessionId: string): void {
      WHERE id = ?`,
     [sessionId, sessionId, sessionId, sessionId, sessionId, sessionId, sessionId]
   );
+
+  db.run("DELETE FROM session_costs WHERE session_id = ?", [sessionId]);
+
+  db.run(
+    `INSERT INTO session_costs (session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, otel_cost_usd, otel_event_count, event_count)
+     SELECT
+       session_id,
+       model,
+       SUM(COALESCE(input_tokens, 0)),
+       SUM(COALESCE(output_tokens, 0)),
+       SUM(COALESCE(cache_read_tokens, 0)),
+       SUM(COALESCE(cache_creation_tokens, 0)),
+       SUM(otel_cost_usd),
+       COUNT(CASE WHEN otel_cost_usd IS NOT NULL THEN 1 END),
+       COUNT(*)
+     FROM events
+     WHERE session_id = ? AND model IS NOT NULL
+       AND (message_id IS NULL OR id = (
+         SELECT id FROM events e2
+         WHERE e2.message_id = events.message_id
+         ORDER BY (COALESCE(e2.input_tokens,0) + COALESCE(e2.output_tokens,0) + COALESCE(e2.cache_read_tokens,0) + COALESCE(e2.cache_creation_tokens,0)) DESC
+         LIMIT 1
+       ))
+     GROUP BY model`,
+    [sessionId]
+  );
 }
 
 export function upsertAgent(

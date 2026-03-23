@@ -20,6 +20,8 @@ export interface CostBreakdown {
   cache_read_tokens: number;
   cache_creation_tokens: number;
   cost_usd: number;
+  otel_cost_usd?: number | null;
+  otel_event_count?: number;
 }
 
 export interface Session {

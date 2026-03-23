@@ -122,7 +122,12 @@ function ModelCard({ data, getPricing, formatOpts }: { data: CostBreakdown; getP
   return (
     <div className="bg-surface rounded-lg p-3">
       <div className="flex items-baseline justify-between mb-2">
-        <span className="font-medium text-primary-dark text-sm">{modelLabel}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-primary-dark text-sm">{modelLabel}</span>
+          {data.otel_event_count != null && data.otel_event_count > 0 && data.otel_event_count === data.event_count && (
+            <span className="text-[10px] font-semibold uppercase tracking-wide bg-accent/20 text-primary-dark px-1.5 py-0.5 rounded">OTEL</span>
+          )}
+        </div>
         <span className="text-sm font-semibold text-primary-dark">{formatCost(data.cost_usd, formatOpts)}</span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">

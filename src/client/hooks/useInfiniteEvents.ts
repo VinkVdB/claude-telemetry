@@ -1,10 +1,13 @@
+// src/client/hooks/useInfiniteEvents.ts
 import { useState, useCallback, useRef } from "react";
 import { api } from "../lib/api";
-import type { Event } from "../lib/types";
+import type { Event, UIEventFilters, EventQueryFilters } from "../lib/types";
+
+export type { UIEventFilters };
 
 export interface UseInfiniteEventsOptions {
-  /** Base filters for the API call (e.g., sessionId, type, model) */
-  filters: Record<string, string>;
+  /** Filters for the API call */
+  filters: UIEventFilters;
   /** Page size */
   pageSize?: number;
   /** Maximum events held in memory (oldest trimmed when exceeded) */
@@ -15,22 +18,23 @@ export interface UseInfiniteEventsResult {
   events: Event[];
   total: number;
   isLoading: boolean;
-  /** Call when scroll reaches bottom */
   loadMore: () => void;
-  /** Call when scroll reaches top */
   loadPrevious: () => void;
-  /** Jump to a specific event number (1-based, highest = most recent) — centers it in the loaded window */
   jumpTo: (eventNumber: number) => void;
-  /** Scroll back to top and reload from offset 0 */
   scrollToTop: () => void;
-  /** Current starting offset (0 = most recent) */
   offset: number;
-  /** Whether more events exist below current loaded set */
   hasMore: boolean;
-  /** Whether earlier (more recent) events exist above current loaded set */
   hasPrevious: boolean;
-  /** Event ID of the last jump target, or null */
   jumpTargetEventId: string | null;
+}
+
+/** Convert UI filters (with null agentIds) to wire format (string-only agentIds) */
+function toWireFilters(filters: UIEventFilters): EventQueryFilters {
+  const wire: EventQueryFilters = { ...filters };
+  if (filters.agentIds) {
+    wire.agentIds = filters.agentIds.map(id => (id === null ? "__main__" : id));
+  }
+  return wire;
 }
 
 export function useInfiniteEvents(
@@ -44,10 +48,8 @@ export function useInfiniteEvents(
   const [offset, setOffset] = useState(0);
   const [jumpTargetEventId, setJumpTargetEventId] = useState<string | null>(null);
 
-  // Track the "base" offset — the offset of the first loaded event
   const baseOffsetRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  // Serialize filters for dependency tracking
   const filtersKeyRef = useRef("");
 
   const fetchPage = useCallback(
@@ -55,10 +57,7 @@ export function useInfiniteEvents(
       pageOffset: number,
       mode: "replace" | "append" | "prepend"
     ): Promise<void> => {
-      // Abort any in-flight request
-      if (abortRef.current) {
-        abortRef.current.abort();
-      }
+      if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -69,27 +68,20 @@ export function useInfiniteEvents(
 
       try {
         for (let attempt = 0; attempt <= MAX_EMPTY_RETRIES; attempt++) {
-          const params: Record<string, string> = {
-            ...filters,
-            limit: String(pageSize),
-            offset: String(currentOffset),
-          };
+          const wireFilters = toWireFilters({ ...filters, limit: pageSize, offset: currentOffset });
 
-          const result = await api.events.list(params);
+          const result = await api.events.query(wireFilters);
 
-          // If this request was aborted, bail out
           if (controller.signal.aborted) return;
 
           setTotal(result.total);
 
-          // If page is empty but more exist, auto-advance to next page
           if (result.events.length === 0) {
             const nextOffset = currentOffset + pageSize;
             if (nextOffset < result.total && attempt < MAX_EMPTY_RETRIES) {
               currentOffset = nextOffset;
               continue;
             }
-            // No more pages or max retries — stop
             break;
           }
 
@@ -100,7 +92,6 @@ export function useInfiniteEvents(
           } else if (mode === "append") {
             setEvents((prev) => {
               const combined = [...prev, ...result.events];
-              // Trim from the front if we exceed max loaded
               if (combined.length > maxLoadedEvents) {
                 const trimCount = combined.length - maxLoadedEvents;
                 baseOffsetRef.current += trimCount;
@@ -111,27 +102,20 @@ export function useInfiniteEvents(
           } else if (mode === "prepend") {
             setEvents((prev) => {
               const combined = [...result.events, ...prev];
-              // Trim from the back if we exceed max loaded
-              if (combined.length > maxLoadedEvents) {
-                return combined.slice(0, maxLoadedEvents);
-              }
+              if (combined.length > maxLoadedEvents) return combined.slice(0, maxLoadedEvents);
               return combined;
             });
             baseOffsetRef.current = currentOffset;
           }
 
-          // Got events, done
           break;
         }
       } catch (err) {
-        // Ignore abort errors
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (controller.signal.aborted) return;
         console.error("Failed to fetch events:", err);
       } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     },
     [filters, pageSize]
@@ -141,7 +125,6 @@ export function useInfiniteEvents(
   const filtersKey = JSON.stringify(filters);
   if (filtersKey !== filtersKeyRef.current) {
     filtersKeyRef.current = filtersKey;
-    // Reset state and fetch first page
     baseOffsetRef.current = 0;
     setOffset(0);
     setEvents([]);
@@ -166,36 +149,29 @@ export function useInfiniteEvents(
 
   const jumpTo = useCallback(
     (eventNumber: number) => {
-      // eventNumber is 1-based where total = most recent
-      // Convert to offset: event #N is at offset (total - N)
       const targetOffset = Math.max(0, Math.min(total - eventNumber, total - 1));
-      // Load a window centered around the target: 1 page before + target page
-      const windowStart = Math.max(0, targetOffset - pageSize);
+      const windowStart  = Math.max(0, targetOffset - pageSize);
 
       baseOffsetRef.current = windowStart;
       setOffset(windowStart);
       setEvents([]);
-      setJumpTargetEventId(null); // will be set after fetch
+      setJumpTargetEventId(null);
 
-      // Fetch the larger window
       const windowSize = Math.min(pageSize * 2, total - windowStart);
       const controller = new AbortController();
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = controller;
       setIsLoading(true);
 
+      const wireFilters = toWireFilters({ ...filters, limit: windowSize, offset: windowStart });
+
       api.events
-        .list({
-          ...filters,
-          limit: String(windowSize),
-          offset: String(windowStart),
-        })
+        .query(wireFilters)
         .then((result) => {
           if (controller.signal.aborted) return;
           setTotal(result.total);
           setEvents(result.events);
           baseOffsetRef.current = windowStart;
-          // Find the event at the target offset and store its ID
           const indexInWindow = targetOffset - windowStart;
           const targetEvent = result.events[indexInWindow];
           setJumpTargetEventId(targetEvent?.id ?? null);
@@ -219,7 +195,7 @@ export function useInfiniteEvents(
     fetchPage(0, "replace");
   }, [fetchPage]);
 
-  const hasMore = baseOffsetRef.current + events.length < total;
+  const hasMore     = baseOffsetRef.current + events.length < total;
   const hasPrevious = baseOffsetRef.current > 0;
 
   return {

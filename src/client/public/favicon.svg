@@ -1,0 +1,70 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Background gradient: deep navy → near-black -->
+    <linearGradient id="bg" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#004d96"/>
+      <stop offset="1" stop-color="#001628"/>
+    </linearGradient>
+
+    <!-- Wave gradient: transparent on left → bright cyan on right -->
+    <linearGradient id="wave" x1="12" y1="0" x2="88" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00a2e0" stop-opacity="0"/>
+      <stop offset="0.22" stop-color="#00a2e0" stop-opacity="0.55"/>
+      <stop offset="0.65" stop-color="#00a2e0"/>
+      <stop offset="1"   stop-color="#22d4f5"/>
+    </linearGradient>
+
+    <!-- Glow for the waveform -->
+    <filter id="glow-w" x="-15%" y="-120%" width="130%" height="340%">
+      <feGaussianBlur stdDeviation="1.8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Glow for the peak dot -->
+    <filter id="glow-p" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Glow for the live dot -->
+    <filter id="glow-l" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="100" height="100" rx="22" fill="url(#bg)"/>
+
+  <!-- Subtle top-glass sheen -->
+  <rect x="2" y="2" width="96" height="44" rx="20" fill="white" opacity="0.05"/>
+
+  <!-- Thin border glint -->
+  <rect x="0.75" y="0.75" width="98.5" height="98.5" rx="21.25"
+        stroke="white" stroke-opacity="0.13" stroke-width="1.5" fill="none"/>
+
+  <!-- Baseline grid line (very subtle) -->
+  <line x1="11" y1="53" x2="89" y2="53" stroke="white" stroke-opacity="0.07" stroke-width="0.75"/>
+
+  <!-- ──────────────────────── ECG / heartbeat waveform ──────────────────────── -->
+  <!-- Flat → sharp spike up → sharp spike down → recovery → flat -->
+  <path d="M12,53 L31,53 L38,53 L44,18 L52,79 L58,53 L88,53"
+        stroke="url(#wave)" stroke-width="5.5"
+        stroke-linecap="round" stroke-linejoin="round"
+        fill="none" filter="url(#glow-w)"/>
+
+  <!-- ──────────────────────── Peak dot (lime accent) ──────────────────────── -->
+  <!-- Outer glow halo -->
+  <circle cx="44" cy="18" r="10" fill="#bdd72d" opacity="0.28" filter="url(#glow-p)"/>
+  <!-- Inner solid dot -->
+  <circle cx="44" cy="18" r="4.5" fill="#d0e84a"/>
+
+  <!-- ──────────────────────── Live endpoint dot (cyan) ──────────────────────── -->
+  <!-- Animated pulse ring -->
+  <circle cx="88" cy="53" r="3.5" fill="#22d4f5" filter="url(#glow-l)">
+    <animate attributeName="r"       values="3.5;9;3.5"   dur="2.2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.9;0;0.9"   dur="2.2s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Solid live dot -->
+  <circle cx="88" cy="53" r="3.5" fill="#22d4f5"/>
+</svg>

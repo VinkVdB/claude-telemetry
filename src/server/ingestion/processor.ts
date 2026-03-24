@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { parseJsonlLine, extractEventData } from "./parser";
 import { upsertProject, upsertSession, insertEvent, updateSessionAggregates, upsertAgent } from "../db/queries";
 
-export function processJsonlLine(db: Database, rawLine: string, projectSlug: string): { eventId: string; sessionId: string; type: string } | null {
+export function processJsonlLine(db: Database, rawLine: string, projectSlug: string, chainId?: string): { eventId: string; sessionId: string; type: string } | null {
   const parsed = parseJsonlLine(rawLine);
   if (!parsed) return null;
   // Skip events without a uuid — they can't be deduplicated and corrupt the primary key
@@ -81,6 +81,7 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
     content: event.content,
     raw: rawLine,
     agentId: event.agentId,
+    chainId: chainId ?? undefined,
   });
 
   // Update session aggregates
@@ -93,6 +94,7 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
       sessionId: event.sessionId,   // event.sessionId IS the parent session ID for subagents
       agentType: (parsed as any).agentType ?? undefined,
       startedAt: event.timestamp,
+      chainId,
     });
   }
 

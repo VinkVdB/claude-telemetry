@@ -109,4 +109,6 @@ export interface AgentSummary {
   total_tokens: number;
   last_active: string | null;
   last_model: string | null;
+  turn_count: number | null;
+  chain_id: string | null;
 }

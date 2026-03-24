@@ -63,14 +63,15 @@ export function insertEvent(
     content?: string;
     raw?: string;
     agentId?: string;
+    chainId?: string;
   }
 ): void {
   db.run(
     `INSERT OR IGNORE INTO events
      (id, message_id, session_id, parent_id, type, timestamp, model,
       input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-      cost_usd, duration_ms, tool_name, stop_reason, content, raw, agent_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      cost_usd, duration_ms, tool_name, stop_reason, content, raw, agent_id, chain_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       event.id, event.messageId ?? null, event.sessionId, event.parentId ?? null,
       event.type, event.timestamp, event.model ?? null,
@@ -79,7 +80,7 @@ export function insertEvent(
       event.costUsd ?? null, event.durationMs ?? null,
       event.toolName ?? null, event.stopReason ?? null,
       event.content ?? null, event.raw ?? null,
-      event.agentId ?? null,
+      event.agentId ?? null, event.chainId ?? null,
     ]
   );
   // Backfill agent_id on existing events that were ingested before this column existed
@@ -172,16 +173,20 @@ export function upsertAgent(
     agentType?: string;
     startedAt?: string;
     description?: string;
+    chainId?: string;
   }
 ): void {
   db.run(
-    `INSERT INTO agents (id, session_id, parent_session, agent_type, started_at, description)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO agents (id, session_id, parent_session, agent_type, started_at, description, chain_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
-       agent_type = COALESCE(excluded.agent_type, agents.agent_type),
-       ended_at = COALESCE(excluded.ended_at, agents.ended_at)`,
+       agent_type   = COALESCE(excluded.agent_type,   agents.agent_type),
+       ended_at     = COALESCE(excluded.ended_at,     agents.ended_at),
+       description  = COALESCE(excluded.description,  agents.description),
+       chain_id     = COALESCE(excluded.chain_id,     agents.chain_id)`,
     [agent.id, agent.sessionId, agent.parentSession ?? null,
-     agent.agentType ?? null, agent.startedAt ?? null, agent.description ?? null]
+     agent.agentType ?? null, agent.startedAt ?? null, agent.description ?? null,
+     agent.chainId ?? null]
   );
 }
 
@@ -272,16 +277,20 @@ export function listEvents(
       conditions.push("1=0");
     } else {
       const hasMain = filters.agentIds.includes("__main__");
+      // chain_id values (or plain agentIds for old records without chain_id)
       const realIds = filters.agentIds.filter(id => id !== "__main__");
 
       if (hasMain && realIds.length > 0) {
-        conditions.push(`(e.agent_id IS NULL OR e.agent_id IN (${realIds.map(() => "?").join(",")}))`);
-        params.push(...realIds);
+        const ph = realIds.map(() => "?").join(",");
+        // Split into two index-friendly conditions — avoids COALESCE killing the index
+        conditions.push(`(e.agent_id IS NULL OR e.chain_id IN (${ph}) OR (e.chain_id IS NULL AND e.agent_id IN (${ph})))`);
+        params.push(...realIds, ...realIds);
       } else if (hasMain) {
         conditions.push("e.agent_id IS NULL");
       } else {
-        conditions.push(`e.agent_id IN (${realIds.map(() => "?").join(",")})`);
-        params.push(...realIds);
+        const ph = realIds.map(() => "?").join(",");
+        conditions.push(`(e.chain_id IN (${ph}) OR (e.chain_id IS NULL AND e.agent_id IN (${ph})))`);
+        params.push(...realIds, ...realIds);
       }
     }
   }
@@ -343,13 +352,15 @@ export function getEventOffsetBySeq(
       const hasMain = filters.agentIds.includes("__main__");
       const realIds = filters.agentIds.filter(id => id !== "__main__");
       if (hasMain && realIds.length > 0) {
-        conditions.push(`(e.agent_id IS NULL OR e.agent_id IN (${realIds.map(() => "?").join(",")}))`);
-        params.push(...realIds);
+        const ph = realIds.map(() => "?").join(",");
+        conditions.push(`(e.agent_id IS NULL OR e.chain_id IN (${ph}) OR (e.chain_id IS NULL AND e.agent_id IN (${ph})))`);
+        params.push(...realIds, ...realIds);
       } else if (hasMain) {
         conditions.push("e.agent_id IS NULL");
       } else {
-        conditions.push(`e.agent_id IN (${realIds.map(() => "?").join(",")})`);
-        params.push(...realIds);
+        const ph = realIds.map(() => "?").join(",");
+        conditions.push(`(e.chain_id IN (${ph}) OR (e.chain_id IS NULL AND e.agent_id IN (${ph})))`);
+        params.push(...realIds, ...realIds);
       }
     }
   }
@@ -415,7 +426,9 @@ export function listAgentSummaries(db: Database, sessionId: string) {
       MAX(timestamp) as last_active,
       (SELECT model FROM events
        WHERE session_id = ? AND agent_id IS NULL AND model IS NOT NULL
-       ORDER BY timestamp DESC LIMIT 1) as last_model
+       ORDER BY timestamp DESC LIMIT 1) as last_model,
+      NULL          as turn_count,
+      NULL          as chain_id
     FROM events WHERE session_id = ? AND agent_id IS NULL
     HAVING COUNT(*) > 0
 
@@ -426,12 +439,15 @@ export function listAgentSummaries(db: Database, sessionId: string) {
       a.agent_type,
       a.description,
       a.started_at,
-      (SELECT COUNT(*) FROM events WHERE agent_id = a.id) as event_count,
+      (SELECT COUNT(*) FROM events WHERE agent_id = a.id)                                    as event_count,
       (SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM events WHERE agent_id = a.id) as total_tokens,
-      (SELECT MAX(timestamp) FROM events WHERE agent_id = a.id) as last_active,
+      (SELECT MAX(timestamp) FROM events WHERE agent_id = a.id)                              as last_active,
       (SELECT model FROM events WHERE agent_id = a.id AND model IS NOT NULL
-       ORDER BY timestamp DESC LIMIT 1) as last_model
-    FROM agents a WHERE a.session_id = ?
+       ORDER BY timestamp DESC LIMIT 1)                                                      as last_model,
+      NULL          as turn_count,
+      a.chain_id
+    FROM agents a
+    WHERE a.session_id = ?
       AND (SELECT COUNT(*) FROM events WHERE agent_id = a.id) > 0
 
     ORDER BY started_at ASC

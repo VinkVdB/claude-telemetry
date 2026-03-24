@@ -97,7 +97,7 @@ export function SessionDetailPage() {
           <span className="text-muted">Cost: <strong className="text-primary-dark">{formatCost(session.total_cost_usd)}</strong></span>
           <span className="text-muted">Events: <strong className="text-primary-dark">{session.event_count}</strong></span>
           {agentSummaries.length > 1 && (
-            <span className="text-muted">Agents: <strong className="text-primary-dark">{agentSummaries.length - 1}</strong></span>
+            <span className="text-muted">Agents: <strong className="text-primary-dark">{new Set(agentSummaries.filter(s => s.id !== null).map(s => s.chain_id ?? s.id)).size}</strong></span>
           )}
         </div>
         {live && (

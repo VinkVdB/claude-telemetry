@@ -73,6 +73,7 @@ export interface Agent {
   description: string | null;
   event_count: number;
   total_tokens: number;
+  chain_id: string | null;
 }
 
 /** UI-side filter shape — agentIds may contain null (representing the "main" agent with no agent_id) */

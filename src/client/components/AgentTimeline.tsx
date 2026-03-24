@@ -176,9 +176,11 @@ export function AgentTimeline({
 
   const eventNumberMap = useMemo(() => {
     const map = new Map<string, number>();
-    hookEvents.forEach(e => map.set(e.id, e.seq));
+    // Compute 1-based chronological position: oldest=1, newest=total.
+    // Events are ordered DESC (newest first at offset 0), so position = total - offset - i.
+    hookEvents.forEach((e, i) => map.set(e.id, total - offset - i));
     return map;
-  }, [hookEvents]);
+  }, [hookEvents, total, offset]);
 
   // Auto-enable agent when jumping to one of its events
   useEffect(() => {
@@ -245,16 +247,16 @@ export function AgentTimeline({
                 "hover:shadow-md"
               )}
             >
-              <div className="flex items-center gap-2">
+              <div className="group/header flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                <span className="text-sm font-semibold text-primary-dark truncate">{s.name}</span>
+                <span className="text-sm font-semibold text-primary-dark truncate group-hover/header:overflow-visible group-hover/header:whitespace-normal">{s.name}</span>
                 {s.turn_count != null && s.turn_count > 1 && (
-                  <span className="text-xs font-medium text-muted bg-surface border border-border rounded px-1.5 py-0.5 shrink-0">
+                  <span className="text-xs font-medium text-muted bg-surface border border-border rounded px-1.5 py-0.5 shrink-0 group-hover/header:hidden">
                     {s.turn_count} turns
                   </span>
                 )}
                 {s.last_model && (
-                  <span className="text-xs text-muted font-mono ml-auto shrink-0">{s.last_model.replace("claude-", "")}</span>
+                  <span className="text-xs text-muted font-mono ml-auto shrink-0 group-hover/header:hidden">{s.last_model.replace("claude-", "")}</span>
                 )}
               </div>
               {s.description && (

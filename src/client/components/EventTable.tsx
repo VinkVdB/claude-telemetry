@@ -363,7 +363,11 @@ export function EventTable({
                     {e.cache_creation_tokens != null ? formatTokens(e.cache_creation_tokens, formatOpts) : "\u2014"}
                   </td>
                   <td className="px-3 py-2 text-right font-mono">
-                    {e.cost_usd != null ? formatCost(e.cost_usd, formatOpts) : "\u2014"}
+                    {e.otel_cost_usd != null
+                      ? <span title="OTEL cost">{formatCost(e.otel_cost_usd, formatOpts)}</span>
+                      : e.cost_usd != null
+                        ? <span title="Token Cost">{formatCost(e.cost_usd, formatOpts)}</span>
+                        : "\u2014"}
                   </td>
                 </tr>
               );

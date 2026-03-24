@@ -10,6 +10,7 @@ export interface Config {
   pollInterval: number;
   otelEnabled: boolean;
   otelPort: number;
+  backfillCosts: boolean;
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -25,5 +26,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     pollInterval: parseInt(env.CT_POLL_INTERVAL ?? "1000", 10),
     otelEnabled: env.CT_OTEL_ENABLED === "true",
     otelPort: parseInt(env.CT_OTEL_PORT ?? "4317", 10),
+    backfillCosts: env.CT_BACKFILL_COSTS === "true",
   };
 }

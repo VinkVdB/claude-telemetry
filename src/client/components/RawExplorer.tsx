@@ -41,9 +41,11 @@ export function RawExplorer() {
 
   const eventNumberMap = useMemo(() => {
     const map = new Map<string, number>();
-    events.forEach(e => map.set(e.id, e.seq));
+    // Compute 1-based chronological position: oldest=1, newest=total.
+    // Events are ordered DESC (newest first at offset 0), so position = total - offset - i.
+    events.forEach((e, i) => map.set(e.id, total - offset - i));
     return map;
-  }, [events]);
+  }, [events, total, offset]);
 
   // SSE: reload with debounce if at top; show banner if user has scrolled back
   // Use isAtTop() to avoid stale-closure offset reads

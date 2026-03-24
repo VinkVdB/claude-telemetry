@@ -53,6 +53,7 @@ export function useInfiniteEvents(
   const [jumpTargetEventId, setJumpTargetEventId] = useState<string | null>(null);
 
   const baseOffsetRef = useRef(0);
+  const totalRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const filtersKeyRef = useRef("");
 
@@ -97,6 +98,7 @@ export function useInfiniteEvents(
           if (controller.signal.aborted) return;
 
           setTotal(result.total);
+          totalRef.current = result.total;
 
           if (result.events.length === 0) {
             const nextOffset = currentOffset + pageSize;
@@ -197,12 +199,11 @@ export function useInfiniteEvents(
   }, [isLoading, pageSize, fetchPage]);
 
   /**
-   * Jump to the event identified by `seq` (its SQLite rowid).
-   * Looks up the event's position in the current filtered result set,
-   * then loads the page centered around it.
+   * Jump to event number `pos` (1-based, oldest=1, newest=total).
+   * Computes the DESC offset directly — no extra API round-trip needed.
    */
   const jumpTo = useCallback(
-    (seq: number) => {
+    (pos: number) => {
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -216,26 +217,25 @@ export function useInfiniteEvents(
         shouldReloadAfterFetchRef.current = true;
       }
 
-      const wireFilters = toWireFilters(filters);
+      // Events ordered DESC: position 1 (oldest) is at DESC offset (total-1),
+      // position total (newest) is at DESC offset 0.
+      const currentTotal = totalRef.current;
+      const targetOffset = Math.max(0, Math.min(currentTotal - pos, currentTotal - 1));
+      const windowStart = Math.max(0, targetOffset - Math.floor(pageSize / 2));
+
+      baseOffsetRef.current = windowStart;
+      setOffset(windowStart);
 
       api.events
-        .getOffset(seq, wireFilters)
-        .then(({ offset: eventOffset }) => {
+        .query(toWireFilters({ ...filters, limit: pageSize, offset: windowStart }))
+        .then((result) => {
           if (controller.signal.aborted) return;
-
-          const windowStart = Math.max(0, eventOffset - Math.floor(pageSize / 2));
-          baseOffsetRef.current = windowStart;
-          setOffset(windowStart);
-
-          return api.events
-            .query({ ...wireFilters, limit: pageSize, offset: windowStart })
-            .then((result) => {
-              if (controller.signal.aborted) return;
-              setTotal(result.total);
-              setEvents(result.events);
-              const targetEvent = result.events.find(e => e.seq === seq);
-              setJumpTargetEventId(targetEvent?.id ?? null);
-            });
+          setTotal(result.total);
+          totalRef.current = result.total;
+          setEvents(result.events);
+          // Target event is at index (targetOffset - windowStart) in the DESC result
+          const targetEvent = result.events[targetOffset - windowStart];
+          setJumpTargetEventId(targetEvent?.id ?? null);
         })
         .catch((err) => {
           if (controller.signal.aborted) return;

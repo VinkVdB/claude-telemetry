@@ -56,6 +56,7 @@ export interface Event {
   cache_read_tokens: number | null;
   cache_creation_tokens: number | null;
   cost_usd: number | null;
+  otel_cost_usd: number | null;
   duration_ms: number | null;
   tool_name: string | null;
   stop_reason: string | null;

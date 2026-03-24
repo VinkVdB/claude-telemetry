@@ -132,6 +132,7 @@ Environment variables always take precedence over database settings. Set an env 
 | `CT_WATCH_MODE` | `auto` | `auto` \| `native` \| `poll` |
 | `CT_POLL_INTERVAL` | `1000` | Polling interval in ms — overrides `server.pollInterval` DB setting |
 | `CT_OTEL_ENABLED` | `false` | Enable OTEL HTTP receiver |
+| `CT_BACKFILL_COSTS` | `false` | Backfill `cost_usd` for historical events that have token data but no cost (one-time repair — disable after running) |
 | `CLAUDE_HOME` | `~/.claude` | Host path to Claude data |
 
 ### Settings page tabs

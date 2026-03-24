@@ -69,6 +69,7 @@ startWatcher(db, {
   pollInterval: effectivePollInterval,
   stabilityThreshold: effectiveStabilityThreshold,
   writePollInterval: effectiveWritePollInterval,
+  backfillCosts: config.backfillCosts,
 }).then(() => {
   console.log(`[watcher] Watching ${config.projectsDir}`);
 });

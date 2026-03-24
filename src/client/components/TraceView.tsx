@@ -53,12 +53,16 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
 
   const timelineWidth = Math.max(containerWidth - LABEL_WIDTH - 20, 200);
 
-  // Assign lanes based on agent_id, not session_id
+  // Assign lanes per logical agent (chain_id ?? id), so all turns of the same agent share one lane
   const agentLanes = useMemo(() => {
     const lanes = new Map<string | null, number>();
     lanes.set(null, 0); // main session = lane 0
-    agents.forEach((a, i) => {
-      lanes.set(a.id, i + 1);
+    const chainToLane = new Map<string, number>();
+    let laneIndex = 1;
+    agents.forEach((a) => {
+      const key = a.chain_id ?? a.id;
+      if (!chainToLane.has(key)) chainToLane.set(key, laneIndex++);
+      lanes.set(a.id, chainToLane.get(key)!);
     });
     return lanes;
   }, [agents]);
@@ -66,8 +70,14 @@ export function TraceView({ events, agents }: { events: Event[]; agents: Agent[]
   const laneLabels = useMemo(() => {
     const labels = new Map<number, string>();
     labels.set(0, "main");
-    agents.forEach((a, i) => {
-      labels.set(i + 1, a.agent_type ?? `agent-${i}`);
+    const seen = new Set<string>();
+    let laneIndex = 1;
+    agents.forEach((a) => {
+      const key = a.chain_id ?? a.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        labels.set(laneIndex++, a.agent_type ?? `agent-${laneIndex - 1}`);
+      }
     });
     return labels;
   }, [agents]);

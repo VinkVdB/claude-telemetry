@@ -77,50 +77,53 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
     return () => ro.disconnect();
   }, []);
 
-  // Build graph data
+  // Build graph data — group agents by chain_id ?? id so each logical agent is one node
   const { nodes, links, maxTokens } = useMemo(() => {
-    // Count events per agent
+    // Count events/tokens per agent_id from events (for main node and fallback)
     const agentEventCounts = new Map<string | null, number>();
-    for (const e of events) {
-      const key = e.agent_id;
-      agentEventCounts.set(key, (agentEventCounts.get(key) ?? 0) + 1);
-    }
-
-    // Count tokens per agent
     const agentTokens = new Map<string | null, number>();
     for (const e of events) {
-      const key = e.agent_id;
-      const tokens = (e.input_tokens ?? 0) + (e.output_tokens ?? 0);
-      agentTokens.set(key, (agentTokens.get(key) ?? 0) + tokens);
+      agentEventCounts.set(e.agent_id, (agentEventCounts.get(e.agent_id) ?? 0) + 1);
+      agentTokens.set(e.agent_id, (agentTokens.get(e.agent_id) ?? 0) + (e.input_tokens ?? 0) + (e.output_tokens ?? 0));
     }
 
     const nodes: GraphNode[] = [];
 
-    // Synthetic "main" node for events with agent_id === null
-    const mainEventCount = agentEventCounts.get(null) ?? 0;
-    const mainTokens = agentTokens.get(null) ?? 0;
+    // Synthetic "main" node
     nodes.push({
       id: "__main__",
       label: "main",
       type: "main",
-      tokens: mainTokens,
-      eventCount: mainEventCount,
+      tokens: agentTokens.get(null) ?? 0,
+      eventCount: agentEventCounts.get(null) ?? 0,
       description: "Main session",
-      colorIndex: -1, // special: uses MAIN_COLOR
+      colorIndex: -1,
       x: size.width / 2,
       y: size.height / 2,
     });
 
-    // Agent nodes
-    agents.forEach((a, i) => {
+    // Group agents by chain key — one node per logical agent
+    const groups = new Map<string, Agent[]>();
+    agents.forEach((a) => {
+      const key = a.chain_id ?? a.id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(a);
+    });
+
+    let colorIndex = 0;
+    groups.forEach((members, chainKey) => {
+      const first = members[0];
+      const totalTokens = members.reduce((s, a) => s + (a.total_tokens || members.flatMap(() => []).reduce((t, id) => t + (agentTokens.get(id as any) ?? 0), 0)), 0) ||
+        members.reduce((s, a) => s + (agentTokens.get(a.id) ?? 0), 0);
+      const totalEvents = members.reduce((s, a) => s + (a.event_count || (agentEventCounts.get(a.id) ?? 0)), 0);
       nodes.push({
-        id: a.id,
-        label: a.agent_type ?? `agent-${i}`,
-        type: a.agent_type ?? "unknown",
-        tokens: a.total_tokens || (agentTokens.get(a.id) ?? 0),
-        eventCount: a.event_count || (agentEventCounts.get(a.id) ?? 0),
-        description: a.description,
-        colorIndex: i,
+        id: chainKey,
+        label: first.agent_type ?? `agent-${colorIndex}`,
+        type: first.agent_type ?? "unknown",
+        tokens: totalTokens,
+        eventCount: totalEvents,
+        description: first.description,
+        colorIndex: colorIndex++,
         x: size.width / 2 + (Math.random() - 0.5) * 200,
         y: size.height / 2 + (Math.random() - 0.5) * 200,
       });
@@ -128,48 +131,37 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
 
     const maxTokens = Math.max(...nodes.map((n) => n.tokens), 1);
 
-    // Build a lookup: session_id -> node id (for parent_session linking)
-    const sessionToNodeId = new Map<string, string>();
+    // Map session_id → chain key of the agent that owns that session
+    const sessionToChainKey = new Map<string, string>();
     agents.forEach((a) => {
-      sessionToNodeId.set(a.session_id, a.id);
+      sessionToChainKey.set(a.session_id, a.chain_id ?? a.id);
     });
 
-    // Links from parent_session relationships
+    // One link per logical agent group (use last-active across all members)
     const links: GraphLink[] = [];
     const now = Date.now();
 
-    agents.forEach((a, i) => {
-      // Find source: the parent. If parent_session matches a known agent's session_id, use that.
-      // Otherwise, the parent is main.
+    groups.forEach((members, chainKey) => {
+      const first = members[0];
       let sourceId = "__main__";
-      if (a.parent_session) {
-        const parentNodeId = sessionToNodeId.get(a.parent_session);
-        if (parentNodeId) {
-          sourceId = parentNodeId;
-        }
+      if (first.parent_session) {
+        sourceId = sessionToChainKey.get(first.parent_session) ?? "__main__";
       }
 
-      // Compute last active timestamp for this link
-      const agentEvents = events.filter((e) => e.agent_id === a.id);
-      const lastActive = agentEvents.length > 0
-        ? Math.max(...agentEvents.map((e) => new Date(e.timestamp).getTime()))
-        : a.started_at ? new Date(a.started_at).getTime() : now;
+      // Last active = latest event across all members
+      const memberIds = new Set(members.map((a) => a.id));
+      const chainEvents = events.filter((e) => e.agent_id && memberIds.has(e.agent_id));
+      const lastActive = chainEvents.length > 0
+        ? Math.max(...chainEvents.map((e) => new Date(e.timestamp).getTime()))
+        : first.started_at ? new Date(first.started_at).getTime() : now;
 
-      // Source color
       const sourceNode = nodes.find((n) => n.id === sourceId);
       const color = sourceNode
-        ? sourceNode.colorIndex === -1
-          ? MAIN_COLOR
-          : AGENT_COLORS[sourceNode.colorIndex % AGENT_COLORS.length]
+        ? sourceNode.colorIndex === -1 ? MAIN_COLOR : AGENT_COLORS[sourceNode.colorIndex % AGENT_COLORS.length]
         : MAIN_COLOR;
 
-      links.push({
-        source: sourceId,
-        target: a.id,
-        tokens: a.total_tokens || (agentTokens.get(a.id) ?? 0),
-        lastActiveAt: lastActive,
-        color,
-      });
+      const totalTokens = members.reduce((s, a) => s + (a.total_tokens || (agentTokens.get(a.id) ?? 0)), 0);
+      links.push({ source: sourceId, target: chainKey, tokens: totalTokens, lastActiveAt: lastActive, color });
     });
 
     return { nodes, links, maxTokens };

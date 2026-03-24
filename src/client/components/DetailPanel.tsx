@@ -78,10 +78,10 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
                 </p>
               </div>
             </div>
-            {event.cost_usd != null && (
+            {(event.otel_cost_usd != null || event.cost_usd != null) && (
               <div className="mt-2 pt-2 border-t border-border flex justify-between items-baseline">
-                <span className="text-xs text-muted">Total cost</span>
-                <span className="font-bold text-primary-dark">{formatCost(event.cost_usd, formatOpts)}</span>
+                <span className="text-xs text-muted">Total cost{event.otel_cost_usd != null ? " (OTEL)" : ""}</span>
+                <span className="font-bold text-primary-dark">{formatCost((event.otel_cost_usd ?? event.cost_usd)!, formatOpts)}</span>
               </div>
             )}
           </div>

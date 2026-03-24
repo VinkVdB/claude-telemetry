@@ -117,6 +117,28 @@ export function applySchema(db: Database): void {
   // Migration: add otel_cost_usd column to events for OTEL-reported cost (separate from estimated cost_usd)
   try { db.exec("ALTER TABLE events ADD COLUMN otel_cost_usd REAL"); } catch { /* column already exists */ }
 
+  // Migration: add chain_id to agents and events for logical agent grouping.
+  // chain_id = UUID of the very first record in the transcript chain. All turn transcripts
+  // of the same logical agent share this value. Stored on BOTH tables so listEvents can
+  // filter by chain_id directly (indexed column lookup) without any subquery expansion.
+  try { db.exec("ALTER TABLE agents ADD COLUMN chain_id TEXT"); } catch { /* already exists */ }
+  try { db.exec("ALTER TABLE events ADD COLUMN chain_id TEXT"); } catch { /* already exists */ }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_agents_chain ON agents(chain_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_events_chain  ON events(chain_id)");
+
+  // Backfill chain_id on existing events from their agent's chain_id — pure SQL, no file reads.
+  // Runs once; agents without chain_id yet simply leave events.chain_id NULL (fallback to agent_id).
+  const chainIdBackfill = db.query("SELECT value FROM settings WHERE key='migration_chain_id_events_backfill'").get();
+  if (!chainIdBackfill) {
+    db.exec(`
+      UPDATE events
+      SET chain_id = (SELECT chain_id FROM agents WHERE id = events.agent_id)
+      WHERE agent_id IS NOT NULL AND chain_id IS NULL
+    `);
+    db.run(`INSERT INTO settings (key, value) VALUES ('migration_chain_id_events_backfill', '1')
+            ON CONFLICT(key) DO UPDATE SET value='1'`);
+  }
+
   // Session costs materialized aggregate table
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_costs (

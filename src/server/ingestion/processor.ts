@@ -1,9 +1,10 @@
 // src/server/ingestion/processor.ts
 import type { Database } from "bun:sqlite";
 import { parseJsonlLine, extractEventData } from "./parser";
+import { calculateCost } from "./pricing";
 import { upsertProject, upsertSession, insertEvent, updateSessionAggregates, upsertAgent } from "../db/queries";
 
-export function processJsonlLine(db: Database, rawLine: string, projectSlug: string): { eventId: string; sessionId: string; type: string } | null {
+export function processJsonlLine(db: Database, rawLine: string, projectSlug: string, chainId?: string): { eventId: string; sessionId: string; type: string } | null {
   const parsed = parseJsonlLine(rawLine);
   if (!parsed) return null;
   // Skip events without a uuid — they can't be deduplicated and corrupt the primary key
@@ -44,16 +45,24 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
       if (newTotal <= existing.total) return null; // existing is already the best version
 
       // UPDATE the existing row in-place (preserving original UUID/rowid)
+      const newCost = event.model && newTotal > 0 ? calculateCost(event.model, {
+        inputTokens: event.inputTokens ?? 0,
+        outputTokens: event.outputTokens ?? 0,
+        cacheReadTokens: event.cacheReadTokens ?? 0,
+        cacheCreationTokens: event.cacheCreationTokens ?? 0,
+      }) : null;
       db.run(
         `UPDATE events SET
            input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, cache_creation_tokens = ?,
-           model = COALESCE(?, model), content = COALESCE(?, content)
+           model = COALESCE(?, model), content = COALESCE(?, content),
+           cost_usd = COALESCE(?, cost_usd)
          WHERE message_id = ?`,
         [
           event.inputTokens ?? null, event.outputTokens ?? null,
           event.cacheReadTokens ?? null, event.cacheCreationTokens ?? null,
           event.model ?? null,
-          event.content ?? null, event.messageId,
+          event.content ?? null,
+          newCost ?? null, event.messageId,
         ]
       );
       // Update session aggregates and return the original event's id
@@ -75,12 +84,18 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
     outputTokens: event.outputTokens,
     cacheReadTokens: event.cacheReadTokens,
     cacheCreationTokens: event.cacheCreationTokens,
-    costUsd: null,
+    costUsd: event.model && event.inputTokens != null ? calculateCost(event.model, {
+      inputTokens: event.inputTokens ?? 0,
+      outputTokens: event.outputTokens ?? 0,
+      cacheReadTokens: event.cacheReadTokens ?? 0,
+      cacheCreationTokens: event.cacheCreationTokens ?? 0,
+    }) : undefined,
     toolName: event.toolName,
     stopReason: event.stopReason,
     content: event.content,
     raw: rawLine,
     agentId: event.agentId,
+    chainId: chainId ?? undefined,
   });
 
   // Update session aggregates
@@ -93,6 +108,7 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
       sessionId: event.sessionId,   // event.sessionId IS the parent session ID for subagents
       agentType: (parsed as any).agentType ?? undefined,
       startedAt: event.timestamp,
+      chainId,
     });
   }
 

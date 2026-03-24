@@ -4,10 +4,32 @@ import { statSync } from "fs";
 import { basename, dirname, relative } from "path";
 import type { Database } from "bun:sqlite";
 import { processJsonlLine } from "./processor";
+import { calculateCost } from "./pricing";
 import { getCursor, setCursor, upsertAgent, getSession } from "../db/queries";
 import { broadcast } from "../sse/broadcaster";
 
 let watcher: FSWatcher | null = null;
+
+// In-memory cache: agentId → chain_id.
+// Lazy-loaded from DB on cache miss, so restarts and session switches are handled without file reads.
+// Cleared every 24h to prevent unbounded growth.
+const agentChainCache = new Map<string, string>();
+setInterval(() => agentChainCache.clear(), 24 * 60 * 60 * 1000).unref();
+
+function getCachedChainId(db: Database, agentId: string): string | undefined {
+  const hit = agentChainCache.get(agentId);
+  if (hit) return hit;
+  // Lazy-load from DB on cache miss (covers restarts and switching between older sessions)
+  const row = db.query("SELECT chain_id FROM agents WHERE id = ?").get(agentId) as { chain_id: string | null } | null;
+  if (row?.chain_id) {
+    agentChainCache.set(agentId, row.chain_id);
+    return row.chain_id;
+  }
+}
+
+function setCachedChainId(agentId: string, chainId: string): void {
+  agentChainCache.set(agentId, chainId);
+}
 
 interface WatcherConfig {
   projectsDir: string;
@@ -15,6 +37,7 @@ interface WatcherConfig {
   pollInterval: number;
   stabilityThreshold?: number;
   writePollInterval?: number;
+  backfillCosts?: boolean;
 }
 
 export async function startWatcher(db: Database, config: WatcherConfig): Promise<void> {
@@ -64,9 +87,93 @@ export async function startWatcher(db: Database, config: WatcherConfig): Promise
       for (const filePath of initialFiles) {
         await ingestFile(db, filePath, config.projectsDir);
       }
+      // One-time backfill: set chain_id for agents ingested before chain_id support was added
+      await backfillChainIds(db, config.projectsDir);
+      // Backfill cost_usd for events that have tokens but were ingested before cost calculation was active
+      if (config.backfillCosts) backfillCosts(db);
       resolve();
     });
   });
+}
+
+/** Backfill chain_id for agents that were ingested before chain_id support was added.
+ *  Phase 1: For agents with chain_id IS NULL — reads first-line UUID from the JSONL file and
+ *            sets chain_id on both the agent row and its events.
+ *  Phase 2: For agents with chain_id already set — propagates it down to any events that still
+ *            have chain_id IS NULL (happens when events were ingested before chain_id was working
+ *            but the agent row was later updated via a newer ingestion). */
+async function backfillChainIds(db: Database, projectsDir: string): Promise<void> {
+  // Phase 1: agents without chain_id — read from file
+  const agentsWithoutChain = db.query(
+    "SELECT a.id, a.session_id, s.project_id FROM agents a JOIN sessions s ON s.id = a.session_id WHERE a.chain_id IS NULL"
+  ).all() as { id: string; session_id: string; project_id: string }[];
+
+  let updated = 0;
+  for (const agent of agentsWithoutChain) {
+    const filePath = `${projectsDir}/${agent.project_id}/${agent.session_id}/subagents/agent-${agent.id}.jsonl`;
+    try {
+      const firstLine = (await Bun.file(filePath).text()).split("\n")[0];
+      if (!firstLine) continue;
+      const firstRecord = JSON.parse(firstLine);
+      if (!firstRecord?.uuid) continue;
+
+      const chainId: string = firstRecord.uuid;
+      db.run("UPDATE agents SET chain_id = ? WHERE id = ? AND chain_id IS NULL", [chainId, agent.id]);
+      db.run("UPDATE events SET chain_id = ? WHERE agent_id = ? AND chain_id IS NULL", [chainId, agent.id]);
+      setCachedChainId(agent.id, chainId);
+      updated++;
+    } catch { /* file not found or unreadable — skip */ }
+  }
+
+  // Phase 2: agents that already have chain_id set, but some of their events still have chain_id NULL.
+  // This happens when events were ingested before chain_id was working correctly, and the agent row
+  // was later updated (e.g. by a newer event) but the old events were never backfilled.
+  const phase2 = db.run(`
+    UPDATE events
+    SET chain_id = (SELECT chain_id FROM agents WHERE id = events.agent_id)
+    WHERE agent_id IS NOT NULL
+      AND chain_id IS NULL
+      AND agent_id IN (SELECT id FROM agents WHERE chain_id IS NOT NULL)
+  `);
+  const p2count = phase2.changes;
+
+  if (updated > 0 || p2count > 0) {
+    console.log(`[watcher] backfilled chain_id: ${updated} agent(s) from file, ${p2count} event(s) from agent row`);
+  }
+}
+
+/** Backfill cost_usd for events that have token data but were ingested before cost calculation
+ *  was active (cost_usd IS NULL and no OTEL cost). Runs synchronously on startup. */
+function backfillCosts(db: Database): void {
+  const events = db.query(`
+    SELECT rowid, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
+    FROM events
+    WHERE cost_usd IS NULL
+      AND otel_cost_usd IS NULL
+      AND model IS NOT NULL
+      AND input_tokens IS NOT NULL
+  `).all() as { rowid: number; model: string; input_tokens: number; output_tokens: number; cache_read_tokens: number | null; cache_creation_tokens: number | null }[];
+
+  if (events.length === 0) return;
+
+  const update = db.prepare("UPDATE events SET cost_usd = ? WHERE rowid = ?");
+  let updated = 0;
+  for (const e of events) {
+    const cost = calculateCost(e.model, {
+      inputTokens: e.input_tokens,
+      outputTokens: e.output_tokens ?? 0,
+      cacheReadTokens: e.cache_read_tokens ?? 0,
+      cacheCreationTokens: e.cache_creation_tokens ?? 0,
+    });
+    if (cost > 0) {
+      update.run(cost, e.rowid);
+      updated++;
+    }
+  }
+
+  if (updated > 0) {
+    console.log(`[watcher] backfilled cost_usd for ${updated} event(s)`);
+  }
 }
 
 export async function stopWatcher(): Promise<void> {
@@ -96,10 +203,30 @@ async function ingestFile(db: Database, filePath: string, projectsDir: string): 
     const relPath = relative(projectsDir, filePath);
     const projectSlug = relPath.split("/")[0] ?? basename(dirname(filePath));
 
+    // For subagent files, resolve chain_id from cache/DB or extract from lines[0] for new files.
+    let chainId: string | undefined;
+    if (filePath.includes("/subagents/")) {
+      const fileName = basename(filePath, ".jsonl");
+      const agentId = fileName.startsWith("agent-") ? fileName.slice(6) : fileName;
+      if (agentId) {
+        chainId = getCachedChainId(db, agentId);
+        if (!chainId && offset === 0) {
+          // New file — first line is already in memory, no extra read needed
+          try {
+            const firstRecord = JSON.parse(lines[0]);
+            if (firstRecord?.uuid) {
+              chainId = firstRecord.uuid;
+              setCachedChainId(agentId, chainId);
+            }
+          } catch { /* malformed first line — chainId stays undefined */ }
+        }
+      }
+    }
+
     let processedCount = 0;
     let firstSessionId: string | null = null;
     for (const line of lines) {
-      const result = processJsonlLine(db, line, projectSlug);
+      const result = processJsonlLine(db, line, projectSlug, chainId);
       if (result) {
         broadcast("event", result);
         if (!firstSessionId) firstSessionId = result.sessionId;
@@ -135,12 +262,14 @@ async function ingestFile(db: Database, filePath: string, projectsDir: string): 
         // parts[0] = projectSlug, parts[1] = sessionId, parts[2] = "subagents", parts[3] = filename
         const parentSessionId = parts[1];
         if (agentId && parentSessionId) {
+          // chainId was already resolved above (from cache/DB or lines[0])
           upsertAgent(db, {
             id: agentId,
             sessionId: parentSessionId,
             agentType: meta.agentType,
             startedAt: undefined,
             description: meta.description,
+            chainId,
           });
         }
       } catch { /* no meta file or invalid JSON — silently skip */ }

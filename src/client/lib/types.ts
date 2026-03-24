@@ -56,6 +56,7 @@ export interface Event {
   cache_read_tokens: number | null;
   cache_creation_tokens: number | null;
   cost_usd: number | null;
+  otel_cost_usd: number | null;
   duration_ms: number | null;
   tool_name: string | null;
   stop_reason: string | null;
@@ -73,6 +74,7 @@ export interface Agent {
   description: string | null;
   event_count: number;
   total_tokens: number;
+  chain_id: string | null;
 }
 
 /** UI-side filter shape — agentIds may contain null (representing the "main" agent with no agent_id) */
@@ -109,4 +111,6 @@ export interface AgentSummary {
   total_tokens: number;
   last_active: string | null;
   last_model: string | null;
+  turn_count: number | null;
+  chain_id: string | null;
 }

@@ -36,18 +36,28 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
   // referential integrity and FTS triggers remain consistent.
   if (event.messageId) {
     const existing = db.query(
-      `SELECT id, COALESCE(input_tokens,0)+COALESCE(output_tokens,0)+COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0) as total
+      `SELECT id, stop_reason,
+              COALESCE(input_tokens,0)+COALESCE(output_tokens,0)+COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0) as total
        FROM events WHERE message_id = ?`
-    ).get(event.messageId) as { id: string; total: number } | null;
+    ).get(event.messageId) as { id: string; total: number; stop_reason: string | null } | null;
     if (existing) {
       const newTotal = (event.inputTokens ?? 0) + (event.outputTokens ?? 0) +
                        (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0);
-      if (newTotal <= existing.total) {
-        // Existing has more/equal tokens — keep it, but fill in tool_name/stop_reason if missing
+
+      // A streaming partial has stop_reason=null. We prefer the final event (stop_reason set)
+      // over any partial, even when token counts are equal. This prevents a partial from
+      // winning the dedup race and dropping the tool_use content of the final event.
+      const existingIsFinal = existing.stop_reason != null;
+      const newIsFinal = event.stopReason != null;
+      const existingWins = newTotal < existing.total ||
+                           (newTotal === existing.total && (existingIsFinal || !newIsFinal));
+
+      if (existingWins) {
+        // Existing wins — still fill in tool_name/stop_reason if they are missing
         if (event.toolName || event.stopReason) {
           db.run(
             `UPDATE events SET
-               tool_name  = COALESCE(tool_name,  ?),
+               tool_name   = COALESCE(tool_name,   ?),
                stop_reason = COALESCE(stop_reason, ?)
              WHERE message_id = ?`,
             [event.toolName ?? null, event.stopReason ?? null, event.messageId]
@@ -56,7 +66,8 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
         return null;
       }
 
-      // New event has more tokens — UPDATE the existing row in-place (preserving original UUID/rowid)
+      // New event wins (more tokens, or same tokens but it's the final event) —
+      // UPDATE the existing row in-place (preserving original UUID/rowid)
       const newCost = event.model && newTotal > 0 ? calculateCost(event.model, {
         inputTokens: event.inputTokens ?? 0,
         outputTokens: event.outputTokens ?? 0,
@@ -66,17 +77,19 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
       db.run(
         `UPDATE events SET
            input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, cache_creation_tokens = ?,
-           model       = COALESCE(?, model),
-           content     = COALESCE(?, content),
-           cost_usd    = COALESCE(?, cost_usd),
-           tool_name   = COALESCE(tool_name, ?),
-           stop_reason = COALESCE(stop_reason, ?)
+           model        = COALESCE(?, model),
+           content      = COALESCE(?, content),
+           raw          = COALESCE(?, raw),
+           cost_usd     = COALESCE(?, cost_usd),
+           tool_name    = COALESCE(tool_name, ?),
+           stop_reason  = COALESCE(stop_reason, ?)
          WHERE message_id = ?`,
         [
           event.inputTokens ?? null, event.outputTokens ?? null,
           event.cacheReadTokens ?? null, event.cacheCreationTokens ?? null,
           event.model ?? null,
           event.content ?? null,
+          rawLine,
           newCost ?? null,
           event.toolName ?? null,
           event.stopReason ?? null,

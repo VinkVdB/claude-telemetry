@@ -51,6 +51,7 @@ export function insertEvent(
   event: {
     id: string;
     messageId?: string;
+    toolUseId?: string;
     sessionId: string;
     parentId?: string;
     type: string;
@@ -72,12 +73,13 @@ export function insertEvent(
 ): void {
   db.run(
     `INSERT OR IGNORE INTO events
-     (id, message_id, session_id, parent_id, type, timestamp, model,
+     (id, message_id, tool_use_id, session_id, parent_id, type, timestamp, model,
       input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
       cost_usd, duration_ms, tool_name, stop_reason, content, raw, agent_id, chain_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      event.id, event.messageId ?? null, event.sessionId, event.parentId ?? null,
+      event.id, event.messageId ?? null, event.toolUseId ?? null,
+      event.sessionId, event.parentId ?? null,
       event.type, event.timestamp, event.model ?? null,
       event.inputTokens ?? null, event.outputTokens ?? null,
       event.cacheReadTokens ?? null, event.cacheCreationTokens ?? null,

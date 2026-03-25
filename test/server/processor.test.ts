@@ -47,7 +47,7 @@ describe("processJsonlLine", () => {
     expect(event.model).toBe("claude-sonnet-4-6");
     expect(event.input_tokens).toBe(150);
     expect(event.output_tokens).toBe(80);
-    expect(event.cost_usd).toBeNull();
+    expect(event.cost_usd).toBeGreaterThan(0);
   });
 
   test("skips duplicate events (idempotent)", () => {
@@ -161,6 +161,75 @@ describe("processJsonlLine", () => {
     // The newer UUID must NOT exist as a separate row
     const newer = db.query("SELECT * FROM events WHERE id = 'uuid-newer'").get() as any;
     expect(newer).toBeNull();
+  });
+
+  test("preserves both events when parallel tool calls share a message_id but have different tool_use_ids", () => {
+    const base = {
+      sessionId: "sess-abc",
+      cwd: "/Users/dev/my-project",
+      type: "assistant",
+      message: {
+        model: "claude-sonnet-4-6",
+        role: "assistant",
+        id: "api-msg-parallel",
+      },
+    };
+    // Early streaming partial (no tool_use yet)
+    const earlyPartial = JSON.stringify({
+      ...base,
+      uuid: "uuid-early",
+      timestamp: "2026-03-18T10:00:00.000Z",
+      message: {
+        ...base.message,
+        content: [],
+        stop_reason: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    });
+    // Streaming partial showing first Agent call (eng-1)
+    const partialEng1 = JSON.stringify({
+      ...base,
+      uuid: "uuid-eng1",
+      timestamp: "2026-03-18T10:00:01.000Z",
+      message: {
+        ...base.message,
+        content: [{ type: "tool_use", id: "toolu_eng1", name: "Agent", input: { name: "backend-eng-1" } }],
+        stop_reason: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    });
+    // Final event for second Agent call (eng-2), stop_reason set
+    const finalEng2 = JSON.stringify({
+      ...base,
+      uuid: "uuid-eng2",
+      timestamp: "2026-03-18T10:00:02.000Z",
+      message: {
+        ...base.message,
+        content: [{ type: "tool_use", id: "toolu_eng2", name: "Agent", input: { name: "backend-eng-2" } }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 1, output_tokens: 647 },
+      },
+    });
+
+    processJsonlLine(db, earlyPartial, "-Users-dev-my-project");
+    processJsonlLine(db, partialEng1, "-Users-dev-my-project");
+    processJsonlLine(db, finalEng2, "-Users-dev-my-project");
+
+    // Must have exactly 2 events: one for each parallel agent call
+    const events = db.query(
+      "SELECT tool_name, tool_use_id, stop_reason, output_tokens FROM events WHERE session_id = 'sess-abc' AND type = 'assistant' ORDER BY tool_use_id"
+    ).all() as any[];
+    expect(events.length).toBe(2);
+
+    // eng-1: partial upgraded from early partial slot — no stop_reason
+    expect(events[0].tool_use_id).toBe("toolu_eng1");
+    expect(events[0].tool_name).toBe("Agent");
+
+    // eng-2: separate row with stop_reason set and real tokens
+    expect(events[1].tool_use_id).toBe("toolu_eng2");
+    expect(events[1].tool_name).toBe("Agent");
+    expect(events[1].stop_reason).toBe("tool_use");
+    expect(events[1].output_tokens).toBe(647);
   });
 
   test("extracts project name from slug", () => {

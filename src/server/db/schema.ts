@@ -98,6 +98,13 @@ export function applySchema(db: Database): void {
   try { db.exec("ALTER TABLE events ADD COLUMN message_id TEXT"); } catch { /* column already exists */ }
   db.exec("CREATE INDEX IF NOT EXISTS idx_events_message_id ON events(message_id) WHERE message_id IS NOT NULL");
 
+  // Migration: add tool_use_id for per-tool-call deduplication within a single API response.
+  // Claude Code writes one JSONL line per tool_use block when parallel tool calls are made. All
+  // share the same message_id but have distinct tool_use_ids. Deduplicating by (message_id, tool_use_id)
+  // preserves all parallel tool calls instead of collapsing them into one.
+  try { db.exec("ALTER TABLE events ADD COLUMN tool_use_id TEXT"); } catch { /* column already exists */ }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_events_message_tool ON events(message_id, tool_use_id) WHERE message_id IS NOT NULL");
+
   // Migration: reset ingested data to fix token double-counting bug (duplicate JSONL lines per message.id)
   // Without this, one API response with text+tool_use produces 2+ events each with full token counts.
   // GUARD: only wipe data on fresh DBs (event count = 0). Old DBs without the settings table had
@@ -219,6 +226,27 @@ export function applySchema(db: Database): void {
       } catch { /* malformed raw — skip */ }
     }
     db.run(`INSERT INTO settings (key, value) VALUES ('migration_tool_name_backfill', '1')
+            ON CONFLICT(key) DO UPDATE SET value='1'`);
+  }
+
+  // Backfill tool_use_id for existing events — parse raw JSON to recover tool_use.id
+  const toolUseIdBackfill = db.query("SELECT value FROM settings WHERE key='migration_tool_use_id_backfill'").get();
+  if (!toolUseIdBackfill) {
+    const rows = db.query(
+      "SELECT rowid, raw FROM events WHERE tool_use_id IS NULL AND raw IS NOT NULL AND type = 'assistant'"
+    ).all() as { rowid: number; raw: string }[];
+    const update = db.prepare("UPDATE events SET tool_use_id = ? WHERE rowid = ?");
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.raw);
+        const content = parsed?.message?.content;
+        if (Array.isArray(content)) {
+          const toolUse = content.find((b: any) => b.type === "tool_use");
+          if (toolUse?.id) update.run(toolUse.id, row.rowid);
+        }
+      } catch { /* malformed raw — skip */ }
+    }
+    db.run(`INSERT INTO settings (key, value) VALUES ('migration_tool_use_id_backfill', '1')
             ON CONFLICT(key) DO UPDATE SET value='1'`);
   }
 

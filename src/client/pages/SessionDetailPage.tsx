@@ -6,6 +6,7 @@ import { TraceView } from "../components/TraceView";
 import { AgentGraph } from "../components/AgentGraph";
 import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
 import { useSSE } from "../lib/sse";
+import { useToast } from "../hooks/useToast";
 import { formatTokens, formatCost, cn } from "../lib/utils";
 import type { Session, Event, Agent, CostBreakdown, AgentSummary } from "../lib/types";
 
@@ -18,6 +19,10 @@ export function SessionDetailPage() {
   const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [tab, setTab] = useState<Tab>("agents");
   const [live, setLive] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editSlug, setEditSlug] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { showToast, ToastNode } = useToast();
 
   // Graph & Trace: lazy-loaded only when that tab is first opened
   const [graphEvents, setGraphEvents] = useState<Event[]>([]);
@@ -93,6 +98,28 @@ export function SessionDetailPage() {
     }
   });
 
+  const startEdit = () => {
+    setEditSlug(session?.custom_slug || session?.slug || session?.id.slice(0, 8) || "");
+    setEditing(true);
+  };
+
+  const cancelEdit = () => setEditing(false);
+
+  const saveSlug = async () => {
+    if (!id || !editSlug.trim()) return;
+    setSaving(true);
+    try {
+      await api.sessions.update(id, { slug: editSlug.trim() });
+      setSession((s) => s ? { ...s, slug: editSlug.trim() } : s);
+      setEditing(false);
+      showToast("Session renamed");
+    } catch {
+      showToast("Failed to rename");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!session) return <p className="text-muted animate-pulse">Loading...</p>;
 
   const totalTokens = session.total_input_tokens + session.total_output_tokens;
@@ -110,11 +137,61 @@ export function SessionDetailPage() {
           {session.project_id.split("-").pop()}
         </Link>
         <span>/</span>
-        <span className="text-primary-dark font-medium">{session.slug || session.id.slice(0, 8)}</span>
+        <span className="text-primary-dark font-medium">{
+          (session.custom_slug || session.slug || session.id.slice(0, 8)).length > 50
+            ? (session.custom_slug || session.slug || session.id.slice(0, 8)).slice(0, 50) + "\u2026"
+            : (session.custom_slug || session.slug || session.id.slice(0, 8))
+        }</span>
       </div>
 
       <div className="flex items-center gap-6 mb-2">
-        <h1 className="text-2xl font-semibold text-primary-dark">{session.slug || "Session"}</h1>
+        <div className="flex items-center gap-1.5 group/title">
+          {editing ? (
+            <div className="flex items-center gap-2">
+              <input
+                className="border border-border rounded-lg px-3 py-1 text-xl font-semibold text-primary-dark focus:outline-none focus:border-primary"
+                value={editSlug}
+                onChange={(e) => setEditSlug(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveSlug();
+                  if (e.key === "Escape") cancelEdit();
+                }}
+                autoFocus
+              />
+              <button
+                onClick={saveSlug}
+                disabled={saving || !editSlug.trim()}
+                className="px-3 py-1 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
+              <button
+                onClick={cancelEdit}
+                className="px-3 py-1 text-sm font-medium text-muted border border-border rounded-lg hover:text-primary-dark transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-2xl font-semibold text-primary-dark" title={session.custom_slug || session.slug || session.id}>
+                {(session.custom_slug || session.slug || "Session").length > 50
+                  ? (session.custom_slug || session.slug || "Session").slice(0, 50) + "\u2026"
+                  : (session.custom_slug || session.slug || "Session")}
+              </h1>
+              <button
+                onClick={startEdit}
+                title="Rename session"
+                className="shrink-0 opacity-0 group-hover/title:opacity-100 transition-opacity text-muted hover:text-primary-dark p-0.5 rounded"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </button>
+            </>
+          )}
+        </div>
         <div className="flex gap-4 text-sm">
           <span className="text-muted">Tokens: <strong className="text-primary-dark">{formatTokens(totalTokens)}</strong></span>
           <span className="text-muted">Cost: <strong className="text-primary-dark">{formatCost(session.total_cost_usd)}</strong></span>
@@ -178,6 +255,7 @@ export function SessionDetailPage() {
           )}
         </div>
       )}
+      {ToastNode}
     </div>
   );
 }

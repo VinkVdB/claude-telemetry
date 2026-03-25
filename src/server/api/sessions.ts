@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import type { Database } from "bun:sqlite";
-import { listSessions, getSession, getSessionCostBreakdown, listAgentSummaries } from "../db/queries";
+import { listSessions, getSession, getSessionCostBreakdown, listAgentSummaries, updateSession } from "../db/queries";
 import { getModelPricing } from "../ingestion/pricing";
 
 interface CostRow {
@@ -60,6 +60,22 @@ export function createSessionRoutes(app: Hono, db: Database): void {
     const session = getSession(db, c.req.param("id"));
     if (!session) return c.json({ error: "Not found" }, 404);
     return c.json(session);
+  });
+
+  app.patch("/api/sessions/:id", async (c) => {
+    const id = c.req.param("id");
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const slug = body.slug;
+    if (typeof slug !== "string" || slug.trim().length === 0) {
+      return c.json({ error: "slug must be a non-empty string" }, 400);
+    }
+    updateSession(db, id, { slug: slug.trim() });
+    return c.json({ success: true });
   });
 
   app.get("/api/sessions/:id/costs", (c) => {

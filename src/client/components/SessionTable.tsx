@@ -36,7 +36,7 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
               <tr key={s.id} className="border-t border-border hover:bg-surface/50 transition-colors">
                 <td className="px-4 py-3">
                   <Link to={`/sessions/${s.id}`} className="text-primary hover:underline font-medium">
-                    {s.slug || s.id.slice(0, 8)}
+                    {s.custom_slug || s.slug || s.id.slice(0, 8)}
                   </Link>
                   {models.length > 0 && (
                     <div className="flex gap-1 mt-1">

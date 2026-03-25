@@ -99,15 +99,19 @@ export function applySchema(db: Database): void {
   db.exec("CREATE INDEX IF NOT EXISTS idx_events_message_id ON events(message_id) WHERE message_id IS NOT NULL");
 
   // Migration: reset ingested data to fix token double-counting bug (duplicate JSONL lines per message.id)
-  // Without this, one API response with text+tool_use produces 2+ events each with full token counts
+  // Without this, one API response with text+tool_use produces 2+ events each with full token counts.
+  // GUARD: only wipe data on fresh DBs (event count = 0). Old DBs without the settings table had
+  // this table created above; we must not wipe their existing data — re-ingestion from JSONL handles
+  // any remaining duplicates going forward via the in-process dedup in processor.ts.
   const dedupMigration = db.query("SELECT value FROM settings WHERE key = 'migration_message_id_dedup'").get() as any;
   if (!dedupMigration) {
-    db.exec("DELETE FROM events");
-    db.exec("DELETE FROM agents");
-    db.exec("DELETE FROM otel_raw");
-    db.exec("DELETE FROM sessions");
-    db.exec("DELETE FROM projects");
-    db.exec("DELETE FROM ingest_cursors");
+    const existingEventCount = (db.query("SELECT COUNT(*) as c FROM events").get() as any).c;
+    if (existingEventCount === 0) {
+      // Fresh DB — safe to wipe (nothing to wipe) and set flag
+    } else {
+      // Old DB upgrading — skip the destructive wipe; in-process dedup prevents new duplicates
+      console.log("[schema] Skipping dedup migration wipe — existing data preserved. Re-ingest from JSONL will correct any historical duplicates.");
+    }
     db.run(`INSERT INTO settings (key, value) VALUES ('migration_message_id_dedup', '1')
             ON CONFLICT(key) DO UPDATE SET value = '1'`);
   }

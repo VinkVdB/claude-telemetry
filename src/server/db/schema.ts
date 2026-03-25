@@ -197,6 +197,27 @@ export function applySchema(db: Database): void {
     );
   }
 
+  // Backfill tool_name for events where dedup dropped it — parse raw JSON to recover tool_use.name
+  const toolNameBackfill = db.query("SELECT value FROM settings WHERE key='migration_tool_name_backfill'").get();
+  if (!toolNameBackfill) {
+    const rows = db.query(
+      "SELECT rowid, raw FROM events WHERE tool_name IS NULL AND raw IS NOT NULL AND type = 'assistant'"
+    ).all() as { rowid: number; raw: string }[];
+    const update = db.prepare("UPDATE events SET tool_name = ? WHERE rowid = ?");
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.raw);
+        const content = parsed?.message?.content;
+        if (Array.isArray(content)) {
+          const toolUse = content.find((b: any) => b.type === "tool_use");
+          if (toolUse?.name) update.run(toolUse.name, row.rowid);
+        }
+      } catch { /* malformed raw — skip */ }
+    }
+    db.run(`INSERT INTO settings (key, value) VALUES ('migration_tool_name_backfill', '1')
+            ON CONFLICT(key) DO UPDATE SET value='1'`);
+  }
+
   // FTS backfill — run once on first startup after upgrade (guarded by migration flag)
   const ftsBackfill = db.query("SELECT value FROM settings WHERE key='migration_fts_backfill'").get();
   if (!ftsBackfill) {

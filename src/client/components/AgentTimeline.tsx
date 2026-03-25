@@ -1,5 +1,5 @@
 // src/client/components/AgentTimeline.tsx
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { Event, AgentSummary } from "../lib/types";
 import { DetailPanel } from "./DetailPanel";
 import { EventTable } from "./EventTable";
@@ -12,11 +12,9 @@ import { useSettings } from "../contexts/SettingsContext";
 export function AgentTimeline({
   agentSummaries,
   sessionId,
-  refreshSignal,
 }: {
   agentSummaries: AgentSummary[];
   sessionId: string;
-  refreshSignal?: number;
 }) {
   const { settings } = useSettings();
   const AGENT_COLORS: string[] = settings["graph.agentColors"] ?? ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
@@ -144,19 +142,6 @@ export function AgentTimeline({
     filters: hookFilters,
     maxLoadedEvents: settings["display.maxLoadedEvents"] ?? 500,
   });
-
-  // Refresh on SSE signal from parent
-  const prevRefreshSignal = useRef(refreshSignal);
-  useEffect(() => {
-    if (refreshSignal !== undefined && refreshSignal !== prevRefreshSignal.current) {
-      prevRefreshSignal.current = refreshSignal;
-      if (isAtTop()) {
-        requestReload();
-      } else {
-        setNewEventCount(c => c + 1);
-      }
-    }
-  }, [refreshSignal, requestReload, isAtTop]);
 
   // SSE: new event for this session — use isAtTop() to avoid stale-closure offset reads
   useSSE((_event, data) => {

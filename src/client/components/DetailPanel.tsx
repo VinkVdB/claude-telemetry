@@ -92,11 +92,11 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
             <h4 className="text-sm font-medium text-muted mb-2">Content</h4>
             {content.map((block: any, i: number) => (
               <div key={i} className="mb-2">
-                {block.type === "text" && <p className="text-sm whitespace-pre-wrap">{block.text}</p>}
+                {block.type === "text" && <p className="text-sm whitespace-pre-wrap break-words">{block.text}</p>}
                 {block.type === "thinking" && (
                   <details className="bg-surface rounded-lg p-3">
                     <summary className="text-xs text-muted cursor-pointer">Thinking</summary>
-                    <p className="text-sm mt-2 whitespace-pre-wrap">{block.thinking}</p>
+                    <p className="text-sm mt-2 whitespace-pre-wrap break-words">{block.thinking}</p>
                   </details>
                 )}
                 {block.type === "tool_use" && (
@@ -108,13 +108,36 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
                 {block.type === "tool_result" && (
                   <div className="bg-surface rounded-lg p-3">
                     <p className="text-xs text-muted mb-1">Tool Result</p>
-                    <pre className="text-xs overflow-x-auto">{JSON.stringify(block.content, null, 2)}</pre>
+                    <pre className="text-xs whitespace-pre-wrap break-words">{JSON.stringify(block.content, null, 2)}</pre>
                   </div>
                 )}
               </div>
             ))}
           </div>
         )}
+
+        {/* Prompt content: user events with plain string content */}
+        {content.length === 0 && event.type === "user" && (() => {
+          let promptText: string | null = null;
+          if (event.raw) {
+            try {
+              const parsed = JSON.parse(event.raw);
+              const msgContent = parsed?.message?.message?.content;
+              if (typeof msgContent === "string") promptText = msgContent;
+            } catch {}
+          }
+          if (!promptText && typeof event.content === "string" && event.content.length > 0) {
+            // content field is a plain string (not JSON array)
+            try { JSON.parse(event.content); } catch { promptText = event.content; }
+          }
+          if (!promptText) return null;
+          return (
+            <div>
+              <h4 className="text-sm font-medium text-muted mb-2">Prompt</h4>
+              <p className="text-sm whitespace-pre-wrap break-words">{promptText}</p>
+            </div>
+          );
+        })()}
 
         <div>
           <p className="text-xs text-muted mb-2 font-medium">Raw JSON</p>

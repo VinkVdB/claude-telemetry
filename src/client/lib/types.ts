@@ -32,6 +32,7 @@ export interface Session {
   ended_at: string | null;
   last_updated: string | null;
   slug: string | null;
+  custom_slug: string | null;
   total_input_tokens: number;
   total_output_tokens: number;
   total_cache_read: number;

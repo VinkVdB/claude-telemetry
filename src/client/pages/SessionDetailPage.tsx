@@ -99,7 +99,7 @@ export function SessionDetailPage() {
   });
 
   const startEdit = () => {
-    setEditSlug(session?.slug || session?.id.slice(0, 8) || "");
+    setEditSlug(session?.custom_slug || session?.slug || session?.id.slice(0, 8) || "");
     setEditing(true);
   };
 
@@ -138,9 +138,9 @@ export function SessionDetailPage() {
         </Link>
         <span>/</span>
         <span className="text-primary-dark font-medium">{
-          (session.slug || session.id.slice(0, 8)).length > 50
-            ? (session.slug || session.id.slice(0, 8)).slice(0, 50) + "\u2026"
-            : (session.slug || session.id.slice(0, 8))
+          (session.custom_slug || session.slug || session.id.slice(0, 8)).length > 50
+            ? (session.custom_slug || session.slug || session.id.slice(0, 8)).slice(0, 50) + "\u2026"
+            : (session.custom_slug || session.slug || session.id.slice(0, 8))
         }</span>
       </div>
 
@@ -174,10 +174,10 @@ export function SessionDetailPage() {
             </div>
           ) : (
             <>
-              <h1 className="text-2xl font-semibold text-primary-dark" title={session.slug || session.id}>
-                {(session.slug || "Session").length > 50
-                  ? (session.slug || "Session").slice(0, 50) + "\u2026"
-                  : (session.slug || "Session")}
+              <h1 className="text-2xl font-semibold text-primary-dark" title={session.custom_slug || session.slug || session.id}>
+                {(session.custom_slug || session.slug || "Session").length > 50
+                  ? (session.custom_slug || session.slug || "Session").slice(0, 50) + "\u2026"
+                  : (session.custom_slug || session.slug || "Session")}
               </h1>
               <button
                 onClick={startEdit}

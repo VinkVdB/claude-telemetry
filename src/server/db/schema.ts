@@ -21,6 +21,7 @@ export function applySchema(db: Database): void {
       started_at      TEXT,
       ended_at        TEXT,
       slug            TEXT,
+      custom_slug     TEXT,
       total_input_tokens    INTEGER DEFAULT 0,
       total_output_tokens   INTEGER DEFAULT 0,
       total_cache_read      INTEGER DEFAULT 0,
@@ -123,6 +124,7 @@ export function applySchema(db: Database): void {
   // filter by chain_id directly (indexed column lookup) without any subquery expansion.
   try { db.exec("ALTER TABLE agents ADD COLUMN chain_id TEXT"); } catch { /* already exists */ }
   try { db.exec("ALTER TABLE events ADD COLUMN chain_id TEXT"); } catch { /* already exists */ }
+  try { db.exec("ALTER TABLE sessions ADD COLUMN custom_slug TEXT"); } catch { /* already exists */ }
   db.exec("CREATE INDEX IF NOT EXISTS idx_agents_chain ON agents(chain_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_events_chain  ON events(chain_id)");
 

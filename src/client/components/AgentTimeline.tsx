@@ -32,6 +32,8 @@ export function AgentTimeline({
 
   const [selected, setSelected] = useState<Event | null>(null);
   const [newEventCount, setNewEventCount] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
 
   // Chain key: stable id for a logical agent across all its turn transcripts.
   // For the main agent (id=null) the key is null.
@@ -182,6 +184,20 @@ export function AgentTimeline({
     return map;
   }, [hookEvents, total, offset]);
 
+  // Client-side search filter: match against tool_name, content, or agent name
+  const filteredEvents = useMemo(() => {
+    if (!debouncedSearch) return hookEvents;
+    const q = debouncedSearch.toLowerCase();
+    return hookEvents.filter(e => {
+      if (e.tool_name?.toLowerCase().includes(q)) return true;
+      if (e.content?.toLowerCase().includes(q)) return true;
+      const agentName = nameMap.get(e.agent_id) ?? "";
+      if (agentName.toLowerCase().includes(q)) return true;
+      if (e.model?.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }, [hookEvents, debouncedSearch, nameMap]);
+
   // Auto-enable agent when jumping to one of its events
   useEffect(() => {
     if (!jumpTargetEventId) return;
@@ -284,8 +300,17 @@ export function AgentTimeline({
 
       <div className="flex gap-4 items-start">
         <div className="flex-[3] min-w-0">
+          <div className="mb-3">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Filter events by tool, content, agent..."
+              className="w-full border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
+            />
+          </div>
           <EventTable
-            events={hookEvents}
+            events={filteredEvents}
             total={total}
             isLoading={isLoading}
             onLoadMore={loadMore}

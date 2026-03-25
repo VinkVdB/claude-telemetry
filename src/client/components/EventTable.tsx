@@ -38,7 +38,34 @@ interface ToolLabel {
 function getToolLabel(e: Event): ToolLabel {
   // assistant: tool_name in blue, or stop_reason in gray
   if (e.type === "assistant") {
-    if (e.tool_name) return { text: e.tool_name, style: "tool" };
+    // Check for thinking blocks
+    if (e.raw) {
+      try {
+        const parsed = JSON.parse(e.raw);
+        const content = parsed?.message?.content;
+        if (Array.isArray(content) && content[0]?.type === "thinking") {
+          return { text: "Thinking", style: "tool" };
+        }
+      } catch {}
+    }
+    if (e.tool_name) {
+      // Agent tool: show subagent type as postfix
+      if (e.tool_name === "Agent" && e.raw) {
+        try {
+          const parsed = JSON.parse(e.raw);
+          const content = parsed?.message?.content;
+          if (Array.isArray(content)) {
+            const toolBlock = content.find((b: any) => b.type === "tool_use" && b.name === "Agent");
+            const subType = toolBlock?.input?.subagent_type;
+            if (subType) {
+              const truncated = subType.length > 12 ? `${subType.slice(0, 12)}\u2026` : subType;
+              return { text: `Agent: ${truncated}`, style: "tool" };
+            }
+          }
+        } catch {}
+      }
+      return { text: e.tool_name, style: "tool" };
+    }
     if (e.stop_reason) return { text: e.stop_reason, style: "hook" };
     return { text: "\u2014", style: "hook" };
   }
@@ -53,6 +80,16 @@ function getToolLabel(e: Event): ToolLabel {
     return { text: "\u2014", style: "hook" };
   }
 
+  // Check for hookInfos in raw JSON — gray
+  if (e.raw) {
+    try {
+      const parsed = JSON.parse(e.raw);
+      if (Array.isArray(parsed?.hookInfos) && parsed.hookInfos.length > 0) {
+        return { text: "Hook", style: "hook" };
+      }
+    } catch {}
+  }
+
   // user: Answer/Prompt in orange, with content preview
   if (e.type === "user") {
     // Try to extract preview from raw JSONL
@@ -61,7 +98,7 @@ function getToolLabel(e: Event): ToolLabel {
         const parsed = JSON.parse(e.raw);
         const content = parsed?.message?.message?.content;
         if (Array.isArray(content) && content[0]?.type === "tool_result") {
-          // tool_result: show tool_name if set, or extract preview from result content
+          // tool_result: show tool_name if set, or extract preview from result content — blue style
           const resultContent = content[0]?.content;
           let preview = "";
           if (typeof resultContent === "string") {
@@ -75,7 +112,7 @@ function getToolLabel(e: Event): ToolLabel {
             : preview
               ? `Answer: ${preview}${preview.length >= 40 ? "\u2026" : ""}`
               : "Answer";
-          return { text: label, style: "human" };
+          return { text: label, style: "tool" };
         }
         if (typeof content === "string") {
           const preview = content.slice(0, 50);
@@ -91,7 +128,7 @@ function getToolLabel(e: Event): ToolLabel {
       try {
         const blocks = JSON.parse(e.content);
         if (Array.isArray(blocks) && blocks[0]?.type === "tool_result") {
-          return { text: e.tool_name ?? "Answer", style: "human" };
+          return { text: e.tool_name ?? "Answer", style: "tool" };
         }
         if (Array.isArray(blocks)) {
           const textBlock = blocks.find((b: any) => b.type === "text");
@@ -268,9 +305,9 @@ export function EventTable({
               {showAgentColumn && (
                 <th className="px-3 py-2 font-medium">Agent</th>
               )}
-              <th className="px-3 py-2 font-medium">Type</th>
               <th className="px-3 py-2 font-medium">Model</th>
-              <th className="px-3 py-2 font-medium">Tool</th>
+              <th className="px-3 py-2 font-medium">Type</th>
+              <th className="px-3 py-2 font-medium">Action</th>
               <th className="px-3 py-2 font-medium text-right">In</th>
               <th className="px-3 py-2 font-medium text-right">Out</th>
               <th className="px-3 py-2 font-medium text-right">Read</th>
@@ -317,6 +354,9 @@ export function EventTable({
                       </span>
                     </td>
                   )}
+                  <td className="px-3 py-2 text-muted">
+                    {e.model?.replace("claude-", "") ?? "\u2014"}
+                  </td>
                   <td className="px-3 py-2">
                     <span
                       className={cn(
@@ -330,9 +370,6 @@ export function EventTable({
                     >
                       {e.type}
                     </span>
-                  </td>
-                  <td className="px-3 py-2 text-muted">
-                    {e.model?.replace("claude-", "") ?? "\u2014"}
                   </td>
                   <td className="px-3 py-2 max-w-[240px]">
                     {(() => {

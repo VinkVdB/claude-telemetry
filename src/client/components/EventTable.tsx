@@ -40,16 +40,6 @@ interface ToolLabel {
 function getToolLabel(e: Event): ToolLabel {
   // assistant: tool_name in blue, or stop_reason in gray
   if (e.type === "assistant") {
-    // Check for thinking blocks
-    if (e.raw) {
-      try {
-        const parsed = JSON.parse(e.raw);
-        const content = parsed?.message?.content;
-        if (Array.isArray(content) && content[0]?.type === "thinking") {
-          return { text: "Thinking", style: "tool" };
-        }
-      } catch {}
-    }
     if (e.tool_name) {
       // Agent tool: show subagent type as postfix
       if (e.tool_name === "Agent" && e.raw) {
@@ -67,6 +57,16 @@ function getToolLabel(e: Event): ToolLabel {
         } catch {}
       }
       return { text: e.tool_name, style: "tool" };
+    }
+    // Pure thinking response (no tool call)
+    if (e.raw) {
+      try {
+        const parsed = JSON.parse(e.raw);
+        const content = parsed?.message?.content;
+        if (Array.isArray(content) && content[0]?.type === "thinking") {
+          return { text: "Thinking", style: "tool" };
+        }
+      } catch {}
     }
     if (e.stop_reason) return { text: e.stop_reason, style: "hook" };
     return { text: "\u2014", style: "hook" };

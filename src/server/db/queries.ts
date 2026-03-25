@@ -26,7 +26,7 @@ export function updateProject(db: Database, id: string, updates: { name?: string
 }
 
 export function updateSession(db: Database, id: string, data: { slug: string }): void {
-  db.run("UPDATE sessions SET slug = ? WHERE id = ?", [data.slug, id]);
+  db.run("UPDATE sessions SET custom_slug = ? WHERE id = ?", [data.slug, id]);
 }
 
 export function upsertSession(

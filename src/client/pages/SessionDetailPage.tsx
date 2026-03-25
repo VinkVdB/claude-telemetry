@@ -18,7 +18,6 @@ export function SessionDetailPage() {
   const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [tab, setTab] = useState<Tab>("agents");
   const [live, setLive] = useState(false);
-  const [refreshSignal, setRefreshSignal] = useState(0);
 
   // Graph & Trace: lazy-loaded only when that tab is first opened
   const [graphEvents, setGraphEvents] = useState<Event[]>([]);
@@ -53,20 +52,44 @@ export function SessionDetailPage() {
     });
   }, [tab, graphLoaded, id]);
 
-  const coreRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tabRef = useRef(tab);
-  tabRef.current = tab;
+  // Incremental SSE: update header stats and append new graph events without resetting
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const graphEventsRef = useRef(graphEvents);
+  graphEventsRef.current = graphEvents;
+  const graphLoadedRef = useRef(graphLoaded);
+  graphLoadedRef.current = graphLoaded;
 
   useSSE((event, data) => {
     if (event === "event" && data.sessionId === id) {
-      // Debounce metadata refresh — avoids hammering the API on rapid events
-      if (coreRefreshTimerRef.current) clearTimeout(coreRefreshTimerRef.current);
-      coreRefreshTimerRef.current = setTimeout(() => {
-        coreRefreshTimerRef.current = null;
-        fetchCore();
-        if (tabRef.current === "graph-trace") setGraphLoaded(false);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(async () => {
+        refreshTimerRef.current = null;
+        if (!id) return;
+
+        // Refresh session metadata + agent summaries (lightweight, keeps header stats current)
+        const [sess, summaries, costData] = await Promise.all([
+          api.sessions.get(id),
+          api.sessions.agentSummaries(id),
+          api.sessions.costs(id).catch(() => [] as CostBreakdown[]),
+        ]);
+        setSession(sess);
+        setAgentSummaries(summaries);
+        setCosts(costData);
+
+        // If graph tab data is loaded, append new events incrementally
+        if (graphLoadedRef.current) {
+          const currentCount = graphEventsRef.current.length;
+          const [evtResult, agts] = await Promise.all([
+            api.events.query({ sessionId: id, limit: 5000, offset: 0 }),
+            api.agents.list(id),
+          ]);
+          // Only update if there are actually new events (avoids unnecessary re-renders)
+          if (evtResult.events.length !== currentCount) {
+            setGraphEvents(evtResult.events);
+          }
+          setGraphAgents(agts);
+        }
       }, 800);
-      // AgentTimeline manages its own event reload via its own useSSE + requestReload
     }
   });
 
@@ -136,7 +159,6 @@ export function SessionDetailPage() {
         <AgentTimeline
           agentSummaries={agentSummaries}
           sessionId={id!}
-          refreshSignal={refreshSignal}
         />
       )}
       {tab === "graph-trace" && (

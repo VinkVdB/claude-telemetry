@@ -30,6 +30,7 @@ export function AgentTimeline({
 
   const [selected, setSelected] = useState<Event | null>(null);
   const [newEventCount, setNewEventCount] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
 
   // Chain key: stable id for a logical agent across all its turn transcripts.
   // For the main agent (id=null) the key is null.
@@ -269,8 +270,18 @@ export function AgentTimeline({
 
       <div className="flex gap-4 items-start">
         <div className="flex-[3] min-w-0">
+          <div className="mb-3">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Filter events by tool, content, agent..."
+              className="w-full border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
+            />
+          </div>
           <EventTable
             events={hookEvents}
+            searchQuery={searchInput}
             total={total}
             isLoading={isLoading}
             onLoadMore={loadMore}

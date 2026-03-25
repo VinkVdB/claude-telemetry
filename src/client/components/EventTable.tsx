@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect } from "react";
+import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import { formatTokens, formatCost, timeAgo, cn } from "../lib/utils";
 import { useSettings } from "../contexts/SettingsContext";
 import type { Event } from "../lib/types";
@@ -27,6 +27,8 @@ export interface EventTableProps {
   nameMap?: Map<string | null, string>;
   /** Called when a jump targets an event whose agent is hidden */
   onAutoEnableAgent?: (agentId: string | null) => void;
+  /** Optional: client-side search query to filter rendered rows */
+  searchQuery?: string;
 }
 
 interface ToolLabel {
@@ -181,6 +183,7 @@ export function EventTable({
   colorMap,
   nameMap,
   onAutoEnableAgent,
+  searchQuery,
 }: EventTableProps) {
   const { settings } = useSettings();
   const jumpStep = settings["display.jumpStepSize"] ?? 50;
@@ -192,6 +195,20 @@ export function EventTable({
     timeAgoMinutes: settings["display.timeAgoMinutes"] as number,
     timeAgoHours: settings["display.timeAgoHours"] as number,
   };
+  // Client-side search filter: match against getToolLabel text, type, model, agent name
+  const displayEvents = useMemo(() => {
+    if (!searchQuery) return events;
+    const q = searchQuery.toLowerCase();
+    return events.filter(e => {
+      if (getToolLabel(e).text.toLowerCase().includes(q)) return true;
+      if (e.type.toLowerCase().includes(q)) return true;
+      if (e.model?.toLowerCase().includes(q)) return true;
+      const agentName = nameMap?.get(e.agent_id) ?? "";
+      if (agentName.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }, [events, searchQuery, nameMap]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const [jumpInput, setJumpInput] = useState("");
   const prevScrollHeightRef = useRef(0);
@@ -316,7 +333,7 @@ export function EventTable({
             </tr>
           </thead>
           <tbody>
-            {events.map((e) => {
+            {displayEvents.map((e) => {
               const agentColor = colorMap?.get(e.agent_id) ?? "#94a3b8";
               const agentName = nameMap?.get(e.agent_id) ?? "main";
               const eventNumber = eventNumberMap.get(e.id) ?? "?";
@@ -409,7 +426,7 @@ export function EventTable({
                 </tr>
               );
             })}
-            {events.length === 0 && !isLoading && (
+            {displayEvents.length === 0 && !isLoading && (
               <tr>
                 <td
                   colSpan={colCount}

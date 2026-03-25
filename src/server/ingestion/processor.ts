@@ -42,9 +42,21 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
     if (existing) {
       const newTotal = (event.inputTokens ?? 0) + (event.outputTokens ?? 0) +
                        (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0);
-      if (newTotal <= existing.total) return null; // existing is already the best version
+      if (newTotal <= existing.total) {
+        // Existing has more/equal tokens — keep it, but fill in tool_name/stop_reason if missing
+        if (event.toolName || event.stopReason) {
+          db.run(
+            `UPDATE events SET
+               tool_name  = COALESCE(tool_name,  ?),
+               stop_reason = COALESCE(stop_reason, ?)
+             WHERE message_id = ?`,
+            [event.toolName ?? null, event.stopReason ?? null, event.messageId]
+          );
+        }
+        return null;
+      }
 
-      // UPDATE the existing row in-place (preserving original UUID/rowid)
+      // New event has more tokens — UPDATE the existing row in-place (preserving original UUID/rowid)
       const newCost = event.model && newTotal > 0 ? calculateCost(event.model, {
         inputTokens: event.inputTokens ?? 0,
         outputTokens: event.outputTokens ?? 0,
@@ -54,15 +66,21 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
       db.run(
         `UPDATE events SET
            input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, cache_creation_tokens = ?,
-           model = COALESCE(?, model), content = COALESCE(?, content),
-           cost_usd = COALESCE(?, cost_usd)
+           model       = COALESCE(?, model),
+           content     = COALESCE(?, content),
+           cost_usd    = COALESCE(?, cost_usd),
+           tool_name   = COALESCE(tool_name, ?),
+           stop_reason = COALESCE(stop_reason, ?)
          WHERE message_id = ?`,
         [
           event.inputTokens ?? null, event.outputTokens ?? null,
           event.cacheReadTokens ?? null, event.cacheCreationTokens ?? null,
           event.model ?? null,
           event.content ?? null,
-          newCost ?? null, event.messageId,
+          newCost ?? null,
+          event.toolName ?? null,
+          event.stopReason ?? null,
+          event.messageId,
         ]
       );
       // Update session aggregates and return the original event's id

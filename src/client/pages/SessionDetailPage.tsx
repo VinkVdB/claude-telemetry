@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { AgentTimeline } from "../components/AgentTimeline";
 import { TraceView } from "../components/TraceView";
 import { AgentGraph } from "../components/AgentGraph";
 import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
+import { useSSE } from "../lib/sse";
 import { formatTokens, formatCost, cn } from "../lib/utils";
 import type { Session, Event, Agent, CostBreakdown, AgentSummary } from "../lib/types";
 
@@ -50,6 +51,47 @@ export function SessionDetailPage() {
       setGraphLoaded(true);
     });
   }, [tab, graphLoaded, id]);
+
+  // Incremental SSE: update header stats and append new graph events without resetting
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const graphEventsRef = useRef(graphEvents);
+  graphEventsRef.current = graphEvents;
+  const graphLoadedRef = useRef(graphLoaded);
+  graphLoadedRef.current = graphLoaded;
+
+  useSSE((event, data) => {
+    if (event === "event" && data.sessionId === id) {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(async () => {
+        refreshTimerRef.current = null;
+        if (!id) return;
+
+        // Refresh session metadata + agent summaries (lightweight, keeps header stats current)
+        const [sess, summaries, costData] = await Promise.all([
+          api.sessions.get(id),
+          api.sessions.agentSummaries(id),
+          api.sessions.costs(id).catch(() => [] as CostBreakdown[]),
+        ]);
+        setSession(sess);
+        setAgentSummaries(summaries);
+        setCosts(costData);
+
+        // If graph tab data is loaded, append new events incrementally
+        if (graphLoadedRef.current) {
+          const currentCount = graphEventsRef.current.length;
+          const [evtResult, agts] = await Promise.all([
+            api.events.query({ sessionId: id, limit: 5000, offset: 0 }),
+            api.agents.list(id),
+          ]);
+          // Only update if there are actually new events (avoids unnecessary re-renders)
+          if (evtResult.events.length !== currentCount) {
+            setGraphEvents(evtResult.events);
+          }
+          setGraphAgents(agts);
+        }
+      }, 800);
+    }
+  });
 
   if (!session) return <p className="text-muted animate-pulse">Loading...</p>;
 

@@ -47,6 +47,8 @@ export const api = {
     get: (id: string) => get<Session>(`/sessions/${id}`),
     costs: (id: string) => get<CostBreakdown[]>(`/sessions/${id}/costs`),
     agentSummaries: (id: string) => get<AgentSummary[]>(`/sessions/${id}/agent-summaries`),
+    update: (id: string, data: { slug: string }) =>
+      patch<{ success: boolean }>(`/sessions/${encodeURIComponent(id)}`, data),
   },
   events: {
     query: (filters: EventQueryFilters) =>

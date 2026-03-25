@@ -1,11 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { AgentTimeline } from "../components/AgentTimeline";
 import { TraceView } from "../components/TraceView";
 import { AgentGraph } from "../components/AgentGraph";
 import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
-import { useSSE } from "../lib/sse";
 import { formatTokens, formatCost, cn } from "../lib/utils";
 import type { Session, Event, Agent, CostBreakdown, AgentSummary } from "../lib/types";
 
@@ -18,7 +17,6 @@ export function SessionDetailPage() {
   const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [tab, setTab] = useState<Tab>("agents");
   const [live, setLive] = useState(false);
-  const [refreshSignal, setRefreshSignal] = useState(0);
 
   // Graph & Trace: lazy-loaded only when that tab is first opened
   const [graphEvents, setGraphEvents] = useState<Event[]>([]);
@@ -52,23 +50,6 @@ export function SessionDetailPage() {
       setGraphLoaded(true);
     });
   }, [tab, graphLoaded, id]);
-
-  const coreRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tabRef = useRef(tab);
-  tabRef.current = tab;
-
-  useSSE((event, data) => {
-    if (event === "event" && data.sessionId === id) {
-      // Debounce metadata refresh — avoids hammering the API on rapid events
-      if (coreRefreshTimerRef.current) clearTimeout(coreRefreshTimerRef.current);
-      coreRefreshTimerRef.current = setTimeout(() => {
-        coreRefreshTimerRef.current = null;
-        fetchCore();
-        if (tabRef.current === "graph-trace") setGraphLoaded(false);
-      }, 800);
-      // AgentTimeline manages its own event reload via its own useSSE + requestReload
-    }
-  });
 
   if (!session) return <p className="text-muted animate-pulse">Loading...</p>;
 
@@ -136,7 +117,6 @@ export function SessionDetailPage() {
         <AgentTimeline
           agentSummaries={agentSummaries}
           sessionId={id!}
-          refreshSignal={refreshSignal}
         />
       )}
       {tab === "graph-trace" && (

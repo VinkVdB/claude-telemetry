@@ -25,6 +25,7 @@ interface GraphLink {
   tokens: number;
   lastActiveAt: number; // timestamp ms
   color: string;
+  linkType: "spawn" | "message";
 }
 
 interface Transform {
@@ -161,7 +162,65 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
         : MAIN_COLOR;
 
       const totalTokens = members.reduce((s, a) => s + (a.total_tokens || (agentTokens.get(a.id) ?? 0)), 0);
-      links.push({ source: sourceId, target: chainKey, tokens: totalTokens, lastActiveAt: lastActive, color });
+      links.push({ source: sourceId, target: chainKey, tokens: totalTokens, lastActiveAt: lastActive, color, linkType: "spawn" });
+    });
+
+    // Build teammate message links from <teammate-message> user events
+    // Map agent_type → chain keys (one type may match multiple chains if agents were restarted/duplicated)
+    const agentTypeToChainKeys = new Map<string, string[]>();
+    groups.forEach((members, chainKey) => {
+      const agentType = members[0].agent_type;
+      if (!agentType) return;
+      const existing = agentTypeToChainKeys.get(agentType) ?? [];
+      existing.push(chainKey);
+      agentTypeToChainKeys.set(agentType, existing);
+    });
+
+    // agent_id → chain key for receiver lookup
+    const agentIdToChainKey = new Map<string, string>();
+    agents.forEach((a) => {
+      agentIdToChainKey.set(a.id, a.chain_id ?? a.id);
+    });
+
+    // Collect unique (sender chain key → receiver chain key) pairs from teammate message events
+    const messagePairs = new Set<string>();
+    const messageLastActive = new Map<string, number>();
+    const TEAMMATE_MSG_RE = /<teammate-message[^>]*teammate_id="([^"]+)"/g;
+
+    for (const e of events) {
+      if (e.type !== "user" || !e.content?.startsWith("<teammate-message")) continue;
+      const receiverChainKey = e.agent_id ? agentIdToChainKey.get(e.agent_id) : "__main__";
+      if (!receiverChainKey) continue;
+
+      const ts = new Date(e.timestamp).getTime();
+      let match: RegExpExecArray | null;
+      TEAMMATE_MSG_RE.lastIndex = 0;
+      while ((match = TEAMMATE_MSG_RE.exec(e.content)) !== null) {
+        const senderId = match[1];
+        if (senderId === "system") continue;
+
+        const senderChainKeys = agentTypeToChainKeys.get(senderId) ?? [];
+        for (const senderChainKey of senderChainKeys) {
+          if (senderChainKey === receiverChainKey) continue; // skip self-loops
+          const pairKey = `${senderChainKey}→${receiverChainKey}`;
+          messagePairs.add(pairKey);
+          const prev = messageLastActive.get(pairKey) ?? 0;
+          if (ts > prev) messageLastActive.set(pairKey, ts);
+        }
+      }
+    }
+
+    const MESSAGE_COLOR = "#94a3b8"; // neutral slate — distinct from spawn links
+    messagePairs.forEach((pairKey) => {
+      const [senderChainKey, receiverChainKey] = pairKey.split("→");
+      links.push({
+        source: senderChainKey,
+        target: receiverChainKey,
+        tokens: 0,
+        lastActiveAt: messageLastActive.get(pairKey) ?? now,
+        color: MESSAGE_COLOR,
+        linkType: "message",
+      });
     });
 
     return { nodes, links, maxTokens };
@@ -441,9 +500,10 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
         style={{ cursor: panRef.current ? "grabbing" : "grab" }}
       >
         <defs>
-          {/* Arrow markers per link color */}
+          {/* Arrow markers per link */}
           {links.map((link) => {
-            const markerId = `arrow-${link.source}-${link.target}`;
+            const markerId = `arrow-${link.linkType}-${link.source}-${link.target}`;
+            const thickness = link.linkType === "message" ? 2 : linkThickness(link.tokens);
             return (
               <marker
                 key={markerId}
@@ -452,8 +512,8 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
                 refX="0"
                 refY="3"
                 markerUnits="userSpaceOnUse"
-                markerWidth={Math.max(8, linkThickness(link.tokens) * 2)}
-                markerHeight={Math.max(8, linkThickness(link.tokens) * 2) * 0.6}
+                markerWidth={Math.max(8, thickness * 2)}
+                markerHeight={Math.max(8, thickness * 2) * 0.6}
                 orient="auto"
               >
                 <path d="M 0 0 L 10 3 L 0 6 Z" fill={fadedColor(link.color, link.lastActiveAt)} />
@@ -464,7 +524,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
 
         <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
           {/* Links */}
-          {links.map((link, i) => {
+          {links.map((link) => {
             const sourcePos = nodePositions.get(link.source);
             const targetPos = nodePositions.get(link.target);
             if (!sourcePos || !targetPos) return null;
@@ -480,21 +540,27 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
             if (dist === 0) return null;
             const nx = dx / dist;
             const ny = dy / dist;
-            // markerUnits="userSpaceOnUse" + refX="0": tip protrudes markerWidth px
-            // beyond the line endpoint. markerWidth = max(8, thickness*2).
-            const thickness = linkThickness(link.tokens);
+
+            const isMessage = link.linkType === "message";
+            // Message links use a fixed thin stroke; spawn links use token-proportional thickness
+            const thickness = isMessage ? 2 : linkThickness(link.tokens);
             const markerLen = Math.max(8, thickness * 2);
+            // Offset message links slightly sideways so they don't overlap spawn edges
+            const perpX = isMessage ? -ny * 4 : 0;
+            const perpY = isMessage ? nx * 4 : 0;
+            const markerId = `arrow-${link.linkType}-${link.source}-${link.target}`;
 
             return (
               <line
-                key={`${link.source}-${link.target}`}
-                x1={sourcePos.x + nx * rSource}
-                y1={sourcePos.y + ny * rSource}
-                x2={targetPos.x - nx * (rTarget + markerLen)}
-                y2={targetPos.y - ny * (rTarget + markerLen)}
+                key={`${link.linkType}-${link.source}-${link.target}`}
+                x1={sourcePos.x + nx * rSource + perpX}
+                y1={sourcePos.y + ny * rSource + perpY}
+                x2={targetPos.x - nx * (rTarget + markerLen) + perpX}
+                y2={targetPos.y - ny * (rTarget + markerLen) + perpY}
                 stroke={fadedColor(link.color, link.lastActiveAt)}
-                strokeWidth={linkThickness(link.tokens)}
-                markerEnd={`url(#arrow-${link.source}-${link.target})`}
+                strokeWidth={thickness}
+                strokeDasharray={isMessage ? "6 4" : undefined}
+                markerEnd={`url(#${markerId})`}
               />
             );
           })}
@@ -565,6 +631,20 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
             <div>Events: {tooltip.node.eventCount}</div>
             <div>Tokens: {formatTokens(tooltip.node.tokens, formatOpts)}</div>
           </div>
+        </div>
+      )}
+
+      {/* Legend */}
+      {links.some((l) => l.linkType === "message") && (
+        <div className="absolute bottom-2 left-2 flex items-center gap-3 text-xs text-[#64748b] bg-white/90 px-3 py-1.5 rounded border border-border">
+          <span className="flex items-center gap-1.5">
+            <svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#003864" strokeWidth="2"/><path d="M20 1 L24 4 L20 7 Z" fill="#003864"/></svg>
+            spawn
+          </span>
+          <span className="flex items-center gap-1.5">
+            <svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5 3"/><path d="M20 1 L24 4 L20 7 Z" fill="#94a3b8"/></svg>
+            message
+          </span>
         </div>
       )}
 

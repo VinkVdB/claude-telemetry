@@ -8,13 +8,14 @@ import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
 import { useSSE } from "../lib/sse";
 import { useToast } from "../hooks/useToast";
 import { formatTokens, formatCost, cn } from "../lib/utils";
-import type { Session, Event, Agent, CostBreakdown, AgentSummary } from "../lib/types";
+import type { Session, Event, Agent, CostBreakdown, AgentSummary, Project } from "../lib/types";
 
 type Tab = "agents" | "graph-trace";
 
 export function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [session, setSession] = useState<Session | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
   const [agentSummaries, setAgentSummaries] = useState<AgentSummary[]>([]);
   const [costs, setCosts] = useState<CostBreakdown[]>([]);
   const [tab, setTab] = useState<Tab>("agents");
@@ -31,14 +32,16 @@ export function SessionDetailPage() {
 
   const fetchCore = useCallback(async () => {
     if (!id) return;
-    const [sess, summaries, costData] = await Promise.all([
-      api.sessions.get(id),
+    const sess = await api.sessions.get(id);
+    setSession(sess);
+    const [summaries, costData, proj] = await Promise.all([
       api.sessions.agentSummaries(id),
       api.sessions.costs(id).catch(() => [] as CostBreakdown[]),
+      api.projects.get(sess.project_id).catch(() => null),
     ]);
-    setSession(sess);
     setAgentSummaries(summaries);
     setCosts(costData);
+    setProject(proj);
     setLive(true);
   }, [id]);
 
@@ -134,7 +137,7 @@ export function SessionDetailPage() {
         <Link to="/" className="hover:text-primary">Projects</Link>
         <span>/</span>
         <Link to={`/projects/${encodeURIComponent(session.project_id)}`} className="hover:text-primary">
-          {session.project_id.split("-").pop()}
+          {project?.name ?? session.project_id.split("/").pop() ?? session.project_id}
         </Link>
         <span>/</span>
         <span className="text-primary-dark font-medium">{

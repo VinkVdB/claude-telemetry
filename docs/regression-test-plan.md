@@ -67,8 +67,9 @@ Playwright hits `http://localhost:<TEST_PORT>` and asserts DOM elements.
 | E2 | `user` event with tool result content | Row shows correct user label |
 | E3 | `system` event | Row shows "system" label |
 | E4 | `progress` events hidden by default | No progress rows visible unless filter enabled |
-| E5 | Search by tool name | Only matching rows visible |
+| E5 | Search by tool name — results span entire session (not just current page) | Matching events from all pages returned; searching "skill" finds events beyond the first loaded page |
 | E6 | Filter by agent | Only events for selected agent visible |
+| E7 | Search in session event viewer returns same results as raw explorer search for same query | Both use server-side FTS5; result counts match |
 
 ### 5. Agent Timeline / Parallel Agents
 

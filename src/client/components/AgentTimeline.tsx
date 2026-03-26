@@ -109,21 +109,24 @@ export function AgentTimeline({
 
   // Debounce visible agents -> agentIds filter (150ms to batch rapid show/hide-all clicks)
   const debouncedVisibleAgents = useDebouncedValue(visibleAgents, 150);
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
 
   const hookFilters = useMemo(() => {
     const allChainKeys = new Set(agentSummaries.map(getChainKey));
     const allVisible = [...allChainKeys].every(key => debouncedVisibleAgents.has(key));
+    const searchOpt = debouncedSearch ? { search: debouncedSearch } : {};
 
     if (allVisible) {
       // No agentIds filter - return all events for this session
-      return { sessionId };
+      return { sessionId, ...searchOpt };
     }
 
     return {
       sessionId,
       agentIds: [...debouncedVisibleAgents] as (string | null)[],
+      ...searchOpt,
     };
-  }, [sessionId, debouncedVisibleAgents, agentSummaries]);
+  }, [sessionId, debouncedVisibleAgents, agentSummaries, debouncedSearch]);
 
   const {
     events: hookEvents,
@@ -281,7 +284,6 @@ export function AgentTimeline({
           </div>
           <EventTable
             events={hookEvents}
-            searchQuery={searchInput}
             total={total}
             isLoading={isLoading}
             onLoadMore={loadMore}

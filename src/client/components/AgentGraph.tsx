@@ -210,15 +210,18 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       }
     }
 
-    const MESSAGE_COLOR = "#94a3b8"; // neutral slate — distinct from spawn links
     messagePairs.forEach((pairKey) => {
       const [senderChainKey, receiverChainKey] = pairKey.split("→");
+      const senderNode = nodes.find((n) => n.id === senderChainKey);
+      const msgColor = senderNode
+        ? senderNode.colorIndex === -1 ? MAIN_COLOR : AGENT_COLORS[senderNode.colorIndex % AGENT_COLORS.length]
+        : "#94a3b8";
       links.push({
         source: senderChainKey,
         target: receiverChainKey,
         tokens: 0,
         lastActiveAt: messageLastActive.get(pairKey) ?? now,
-        color: MESSAGE_COLOR,
+        color: msgColor,
         linkType: "message",
       });
     });

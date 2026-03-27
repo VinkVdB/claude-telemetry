@@ -548,18 +548,28 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
             // Message links use a fixed thin stroke; spawn links use token-proportional thickness
             const thickness = isMessage ? 2 : linkThickness(link.tokens);
             const markerLen = Math.max(8, thickness * 2);
-            // Offset message links slightly sideways so they don't overlap spawn edges
-            const perpX = isMessage ? -ny * 4 : 0;
-            const perpY = isMessage ? nx * 4 : 0;
             const markerId = `arrow-${link.linkType}-${link.source}-${link.target}`;
 
+            // Bézier curve: start/end on circle edges, control point perpendicular to midpoint
+            const x1 = sourcePos.x + nx * rSource;
+            const y1 = sourcePos.y + ny * rSource;
+            const x2 = targetPos.x - nx * (rTarget + markerLen);
+            const y2 = targetPos.y - ny * (rTarget + markerLen);
+            const mx = (x1 + x2) / 2;
+            const my = (y1 + y2) / 2;
+            // Perpendicular unit vector (rotate 90°)
+            const px = -ny;
+            const py = nx;
+            // Curve spawn links one way, message links the other so they don't overlap
+            const curvature = isMessage ? -30 : 30;
+            const cx = mx + px * curvature;
+            const cy = my + py * curvature;
+
             return (
-              <line
+              <path
                 key={`${link.linkType}-${link.source}-${link.target}`}
-                x1={sourcePos.x + nx * rSource + perpX}
-                y1={sourcePos.y + ny * rSource + perpY}
-                x2={targetPos.x - nx * (rTarget + markerLen) + perpX}
-                y2={targetPos.y - ny * (rTarget + markerLen) + perpY}
+                d={`M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`}
+                fill="none"
                 stroke={fadedColor(link.color, link.lastActiveAt)}
                 strokeWidth={thickness}
                 strokeDasharray={isMessage ? "6 4" : undefined}

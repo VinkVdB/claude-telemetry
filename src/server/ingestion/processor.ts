@@ -2,7 +2,7 @@
 import type { Database } from "bun:sqlite";
 import { parseJsonlLine, extractEventData } from "./parser";
 import { calculateCost } from "./pricing";
-import { upsertProject, upsertSession, insertEvent, updateSessionAggregates, upsertAgent } from "../db/queries";
+import { upsertProject, upsertSession, insertEvent, updateSessionAggregates, upsertAgent, updateSessionTitle } from "../db/queries";
 
 export function processJsonlLine(db: Database, rawLine: string, projectSlug: string, chainId?: string): { eventId: string; sessionId: string; type: string } | null {
   const parsed = parseJsonlLine(rawLine);
@@ -28,6 +28,12 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
     slug: event.sessionMeta?.slug,
     startedAt: event.timestamp,
   });
+
+  // Handle custom-title events: store Claude's auto-generated title unless user renamed
+  if (parsed.type === "custom-title" && parsed.customTitle && event.sessionId) {
+    updateSessionTitle(db, event.sessionId, parsed.customTitle);
+    return null;
+  }
 
   // Deduplicate by (message_id, tool_use_id): Claude Code writes one JSONL line per tool_use block
   // when parallel tool calls are made. All share the same message_id but have distinct tool_use_ids.

@@ -3,7 +3,7 @@
 export interface ParsedLine {
   uuid: string;
   parentUuid?: string;
-  type: string; // "assistant" | "user" | "progress" | "system"
+  type: string; // "assistant" | "user" | "progress" | "system" | "custom-title"
   timestamp: string;
   sessionId: string;
   cwd?: string;
@@ -13,6 +13,7 @@ export interface ParsedLine {
   isSidechain?: boolean;
   agentId?: string;
   requestId?: string;
+  customTitle?: string;
   message?: {
     id?: string;
     model?: string;
@@ -62,6 +63,7 @@ export interface ExtractedEvent {
     gitBranch?: string;
     slug?: string;
     version?: string;
+    customTitle?: string;
   };
   isSidechain?: boolean;
   agentId?: string;
@@ -117,12 +119,13 @@ export function extractEventData(line: ParsedLine): ExtractedEvent {
     event.toolName = "tool_result";
   }
 
-  if (line.cwd || line.gitBranch || line.slug) {
+  if (line.cwd || line.gitBranch || line.slug || line.customTitle) {
     event.sessionMeta = {
       cwd: line.cwd,
       gitBranch: line.gitBranch,
       slug: line.slug,
       version: line.version,
+      customTitle: line.customTitle,
     };
   }
 

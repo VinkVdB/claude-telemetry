@@ -10,8 +10,10 @@ export function upsertProject(db: Database, id: string, name: string, path: stri
      VALUES (?, ?, ?, datetime('now'))
      ON CONFLICT(id) DO UPDATE SET
        last_active = datetime('now'),
-       path = CASE WHEN excluded.path NOT LIKE '-%' THEN excluded.path ELSE projects.path END,
-       name = CASE WHEN excluded.path NOT LIKE '-%' THEN excluded.name ELSE projects.name END`,
+       path = CASE
+         WHEN excluded.path NOT LIKE '-%' AND projects.path LIKE '-%' THEN excluded.path
+         ELSE projects.path
+       END`,
     [id, name, path]
   );
 }
@@ -40,9 +42,17 @@ export function upsertSession(
     `INSERT INTO sessions (id, project_id, git_branch, slug, started_at)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
-       git_branch = COALESCE(excluded.git_branch, sessions.git_branch),
-       slug = COALESCE(excluded.slug, sessions.slug)`,
+       git_branch  = COALESCE(excluded.git_branch, sessions.git_branch),
+       slug        = COALESCE(excluded.slug, sessions.slug),
+       custom_slug = COALESCE(sessions.custom_slug, excluded.custom_slug)`,
     [id, projectId, data.gitBranch ?? null, data.slug ?? null, data.startedAt ?? null]
+  );
+}
+
+export function updateSessionTitle(db: Database, sessionId: string, title: string): void {
+  db.run(
+    `UPDATE sessions SET title = ? WHERE id = ? AND custom_slug IS NULL`,
+    [title, sessionId]
   );
 }
 

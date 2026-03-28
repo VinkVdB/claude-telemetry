@@ -8,6 +8,7 @@ import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
 import { useSSE } from "../lib/sse";
 import { useToast } from "../hooks/useToast";
 import { formatTokens, formatCost, cn } from "../lib/utils";
+import { sessionDisplayName } from "../utils/displayName";
 import type { Session, Event, Agent, CostBreakdown, AgentSummary, Project } from "../lib/types";
 
 type Tab = "agents" | "graph-trace";
@@ -102,7 +103,7 @@ export function SessionDetailPage() {
   });
 
   const startEdit = () => {
-    setEditSlug(session?.custom_slug || session?.slug || session?.id.slice(0, 8) || "");
+    setEditSlug(session ? sessionDisplayName(session) : "");
     setEditing(true);
   };
 
@@ -141,9 +142,9 @@ export function SessionDetailPage() {
         </Link>
         <span>/</span>
         <span className="text-primary-dark font-medium">{
-          (session.custom_slug || session.slug || session.id.slice(0, 8)).length > 50
-            ? (session.custom_slug || session.slug || session.id.slice(0, 8)).slice(0, 50) + "\u2026"
-            : (session.custom_slug || session.slug || session.id.slice(0, 8))
+          sessionDisplayName(session).length > 50
+            ? sessionDisplayName(session).slice(0, 50) + "\u2026"
+            : sessionDisplayName(session)
         }</span>
       </div>
 
@@ -177,10 +178,10 @@ export function SessionDetailPage() {
             </div>
           ) : (
             <>
-              <h1 className="text-2xl font-semibold text-primary-dark" title={session.custom_slug || session.slug || session.id}>
-                {(session.custom_slug || session.slug || "Session").length > 50
-                  ? (session.custom_slug || session.slug || "Session").slice(0, 50) + "\u2026"
-                  : (session.custom_slug || session.slug || "Session")}
+              <h1 className="text-2xl font-semibold text-primary-dark" title={sessionDisplayName(session)}>
+                {sessionDisplayName(session).length > 50
+                  ? sessionDisplayName(session).slice(0, 50) + "\u2026"
+                  : sessionDisplayName(session)}
               </h1>
               <button
                 onClick={startEdit}

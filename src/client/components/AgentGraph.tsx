@@ -210,15 +210,18 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       }
     }
 
-    const MESSAGE_COLOR = "#94a3b8"; // neutral slate — distinct from spawn links
     messagePairs.forEach((pairKey) => {
       const [senderChainKey, receiverChainKey] = pairKey.split("→");
+      const senderNode = nodes.find((n) => n.id === senderChainKey);
+      const msgColor = senderNode
+        ? senderNode.colorIndex === -1 ? MAIN_COLOR : AGENT_COLORS[senderNode.colorIndex % AGENT_COLORS.length]
+        : "#94a3b8";
       links.push({
         source: senderChainKey,
         target: receiverChainKey,
         tokens: 0,
         lastActiveAt: messageLastActive.get(pairKey) ?? now,
-        color: MESSAGE_COLOR,
+        color: msgColor,
         linkType: "message",
       });
     });
@@ -468,7 +471,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
   };
 
   const interpolateToGray = (hex: string, factor: number): string => {
-    const gray = [148, 163, 184]; // #94a3b8
+    const gray = [255, 255, 255]; // #ffffff
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
@@ -538,28 +541,64 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
             const dy = targetPos.y - sourcePos.y;
             const dist = Math.hypot(dx, dy);
             if (dist === 0) return null;
-            const nx = dx / dist;
-            const ny = dy / dist;
 
             const isMessage = link.linkType === "message";
             // Message links use a fixed thin stroke; spawn links use token-proportional thickness
             const thickness = isMessage ? 2 : linkThickness(link.tokens);
-            const markerLen = Math.max(8, thickness * 2);
-            // Offset message links slightly sideways so they don't overlap spawn edges
-            const perpX = isMessage ? -ny * 4 : 0;
-            const perpY = isMessage ? nx * 4 : 0;
+            const markerLen = Math.max(7, thickness * 2);
             const markerId = `arrow-${link.linkType}-${link.source}-${link.target}`;
+
+            // Canonical perpendicular: stable direction for any A↔B pair regardless of arrow direction
+            const [canonSrcPos, canonTgtPos] = link.source < link.target
+              ? [sourcePos, targetPos]
+              : [targetPos, sourcePos];
+            const cdx = canonTgtPos.x - canonSrcPos.x;
+            const cdy = canonTgtPos.y - canonSrcPos.y;
+            const cdist = Math.hypot(cdx, cdy) || 1;
+            const cpx = -cdy / cdist;
+            const cpy = cdx / cdist;
+
+            // Lane separation: shift virtual endpoints perpendicularly so A→B and B→A
+            // land on separate perimeter spots and never cross.
+            const canonicalSign = link.source < link.target ? 1 : -1;
+            const LANE_OFFSET = 20;
+            const shiftX = canonicalSign * cpx * LANE_OFFSET;
+            const shiftY = canonicalSign * cpy * LANE_OFFSET;
+
+            // Departure: point on source circle facing (target + shift)
+            const d1x = targetPos.x + shiftX - sourcePos.x;
+            const d1y = targetPos.y + shiftY - sourcePos.y;
+            const d1len = Math.hypot(d1x, d1y);
+            if (d1len === 0) return null;
+            const x1 = sourcePos.x + rSource * (d1x / d1len);
+            const y1 = sourcePos.y + rSource * (d1y / d1len);
+
+            // Arrival: point on target circle facing (source + shift)
+            const d2x = sourcePos.x + shiftX - targetPos.x;
+            const d2y = sourcePos.y + shiftY - targetPos.y;
+            const d2len = Math.hypot(d2x, d2y);
+            if (d2len === 0) return null;
+            const tgtPx = targetPos.x + rTarget * (d2x / d2len);
+            const tgtPy = targetPos.y + rTarget * (d2y / d2len);
+
+            // Arrow direction (departure → arrival)
+            const adx = tgtPx - x1;
+            const ady = tgtPy - y1;
+            const aDist = Math.hypot(adx, ady);
+            if (aDist < 4) return null;
+            const anx = adx / aDist;
+            const any = ady / aDist;
+
+            // Back off by markerLen so arrowhead tip lands on target perimeter
+            const x2 = tgtPx - anx * markerLen;
+            const y2 = tgtPy - any * markerLen;
 
             return (
               <line
                 key={`${link.linkType}-${link.source}-${link.target}`}
-                x1={sourcePos.x + nx * rSource + perpX}
-                y1={sourcePos.y + ny * rSource + perpY}
-                x2={targetPos.x - nx * (rTarget + markerLen) + perpX}
-                y2={targetPos.y - ny * (rTarget + markerLen) + perpY}
+                x1={x1} y1={y1} x2={x2} y2={y2}
                 stroke={fadedColor(link.color, link.lastActiveAt)}
                 strokeWidth={thickness}
-                strokeDasharray={isMessage ? "6 4" : undefined}
                 markerEnd={`url(#${markerId})`}
               />
             );

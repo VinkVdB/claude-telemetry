@@ -136,6 +136,8 @@ export function applySchema(db: Database): void {
   try { db.exec("ALTER TABLE agents ADD COLUMN chain_id TEXT"); } catch { /* already exists */ }
   try { db.exec("ALTER TABLE events ADD COLUMN chain_id TEXT"); } catch { /* already exists */ }
   try { db.exec("ALTER TABLE sessions ADD COLUMN custom_slug TEXT"); } catch { /* already exists */ }
+  // Migration: add title column for Claude-auto-generated session titles from custom-title events
+  try { db.exec("ALTER TABLE sessions ADD COLUMN title TEXT"); } catch { /* already exists */ }
   db.exec("CREATE INDEX IF NOT EXISTS idx_agents_chain ON agents(chain_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_events_chain  ON events(chain_id)");
 

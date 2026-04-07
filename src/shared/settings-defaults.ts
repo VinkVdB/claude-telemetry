@@ -64,6 +64,10 @@ export const SETTINGS_REGISTRY: Record<string, SettingDefinition> = {
     tooltip: "USD per 1M tokens. Changes apply to new events only — existing costs are not recalculated.",
     validate: pricingValidator,
   },
+  "graph.maxEvents": {
+    type: "number", defaultValue: 2500, min: 100, max: 50000,
+    tooltip: "Maximum number of events loaded for the Graph & Trace view. Lower values are faster to render; raise this if you want to see more history.",
+  },
   "graph.agentColors": {
     type: "string[]",
     defaultValue: ["#00a2e0", "#bdd72d", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"],

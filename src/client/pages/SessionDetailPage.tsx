@@ -7,6 +7,7 @@ import { AgentGraph } from "../components/AgentGraph";
 import { CostBreakdownPanel } from "../components/CostBreakdownPanel";
 import { useSSE } from "../lib/sse";
 import { useToast } from "../hooks/useToast";
+import { useSettings } from "../contexts/SettingsContext";
 import { formatTokens, formatCost, cn } from "../lib/utils";
 import { sessionDisplayName } from "../utils/displayName";
 import type { Session, Event, Agent, CostBreakdown, AgentSummary, Project } from "../lib/types";
@@ -25,6 +26,8 @@ export function SessionDetailPage() {
   const [editSlug, setEditSlug] = useState("");
   const [saving, setSaving] = useState(false);
   const { showToast, ToastNode } = useToast();
+  const { settings } = useSettings();
+  const maxEvents: number = settings["graph.maxEvents"] ?? 2500;
 
   // Graph & Trace: lazy-loaded only when that tab is first opened
   const [graphEvents, setGraphEvents] = useState<Event[]>([]);
@@ -51,8 +54,9 @@ export function SessionDetailPage() {
   // Lazy-load Graph & Trace data when that tab becomes active
   useEffect(() => {
     if (tab !== "graph-trace" || graphLoaded || !id) return;
+    const eventLimit = Math.min(session?.event_count ?? maxEvents, maxEvents);
     Promise.all([
-      api.events.query({ sessionId: id, limit: 5000, offset: 0 }),
+      api.events.query({ sessionId: id, limit: eventLimit, offset: 0 }),
       api.agents.list(id),
     ]).then(([evtResult, agts]) => {
       setGraphEvents(evtResult.events);
@@ -89,7 +93,7 @@ export function SessionDetailPage() {
         if (graphLoadedRef.current) {
           const currentCount = graphEventsRef.current.length;
           const [evtResult, agts] = await Promise.all([
-            api.events.query({ sessionId: id, limit: 5000, offset: 0 }),
+            api.events.query({ sessionId: id, limit: Math.min(sess.event_count, maxEvents), offset: 0 }),
             api.agents.list(id),
           ]);
           // Only update if there are actually new events (avoids unnecessary re-renders)
@@ -244,9 +248,9 @@ export function SessionDetailPage() {
       )}
       {tab === "graph-trace" && (
         <div className="space-y-6">
-          {session.event_count > 5000 && (
+          {session.event_count > maxEvents && (
             <div className="border border-amber-300 bg-amber-50 rounded-lg px-4 py-2 text-sm text-amber-800">
-              This session has {session.event_count.toLocaleString()} events. Graph & Trace is limited to the first 5,000 events.
+              This session has {session.event_count.toLocaleString()} events. Graph & Trace is limited to the first {maxEvents.toLocaleString()} events. Adjust in Settings → Graph.
             </div>
           )}
           {!graphLoaded ? (

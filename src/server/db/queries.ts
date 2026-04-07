@@ -317,7 +317,7 @@ export function listEvents(
     }
   }
 
-  const limit  = Math.min(filters.limit  ?? 100, 1000);
+  const limit  = Math.min(filters.limit  ?? 100, 50_000);
   const offset = filters.offset ?? 0;
 
   // FTS5 search: join to events_fts virtual table

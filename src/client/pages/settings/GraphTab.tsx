@@ -107,6 +107,14 @@ export function GraphTab() {
         </div>
       )}
 
+      {/* Data Loading */}
+      <section>
+        <h3 className="text-sm font-medium mb-3">Data Loading</h3>
+        <div className="space-y-2">
+          <NumberField settingKey="graph.maxEvents" value={local["graph.maxEvents"] ?? 2500} onChange={(v) => set("graph.maxEvents", v)} />
+        </div>
+      </section>
+
       {/* Agent Colors */}
       <section>
         <h3 className="text-sm font-medium mb-2 flex items-center gap-1">

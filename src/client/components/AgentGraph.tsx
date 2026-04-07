@@ -674,15 +674,11 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       )}
 
       {/* Legend */}
-      {links.some((l) => l.linkType === "message") && (
+      {links.length > 0 && (
         <div className="absolute bottom-2 left-2 flex items-center gap-3 text-xs text-[#64748b] bg-white/90 px-3 py-1.5 rounded border border-border">
           <span className="flex items-center gap-1.5">
             <svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#003864" strokeWidth="2"/><path d="M20 1 L24 4 L20 7 Z" fill="#003864"/></svg>
-            spawn
-          </span>
-          <span className="flex items-center gap-1.5">
-            <svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5 3"/><path d="M20 1 L24 4 L20 7 Z" fill="#94a3b8"/></svg>
-            message
+            agent connection
           </span>
         </div>
       )}

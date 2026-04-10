@@ -21,7 +21,7 @@ export function DetailPanel({ event, onClose }: { event: Event | null; onClose: 
   } catch { content = []; }
 
   return (
-    <div className="border border-border rounded-xl bg-white flex flex-col max-h-[calc(100vh-8rem)] overflow-hidden">
+    <div className="border border-border rounded-xl bg-bg flex flex-col max-h-[calc(100vh-8rem)] overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <h3 className="font-semibold text-primary-dark">Event Detail</h3>
         <button onClick={onClose} className="text-muted hover:text-primary-dark text-xl">&times;</button>

@@ -488,7 +488,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
   return (
     <div
       ref={containerRef}
-      className="relative border border-border rounded-xl bg-white overflow-hidden"
+      className="relative border border-border rounded-xl bg-bg overflow-hidden"
       style={{ minHeight: 1000 }}
     >
       <svg
@@ -660,7 +660,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
       {/* Tooltip */}
       {tooltip && (
         <div
-          className="absolute z-50 pointer-events-none rounded-lg border border-border bg-white px-3 py-2 shadow-lg text-xs"
+          className="absolute z-50 pointer-events-none rounded-lg border border-border bg-surface px-3 py-2 shadow-lg text-xs"
           style={{ left: tooltip.x, top: tooltip.y }}
         >
           <div className="font-semibold text-[#003864] mb-1">{tooltip.node.label}</div>
@@ -675,7 +675,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
 
       {/* Legend */}
       {links.length > 0 && (
-        <div className="absolute bottom-2 left-2 flex items-center gap-3 text-xs text-[#64748b] bg-white/90 px-3 py-1.5 rounded border border-border">
+        <div className="absolute bottom-2 left-2 flex items-center gap-3 text-xs text-muted bg-bg/90 px-3 py-1.5 rounded border border-border">
           <span className="flex items-center gap-1.5">
             <svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#003864" strokeWidth="2"/><path d="M20 1 L24 4 L20 7 Z" fill="#003864"/></svg>
             agent connection
@@ -685,7 +685,7 @@ export function AgentGraph({ agents, events }: { agents: Agent[]; events: Event[
 
       {/* Zoom indicator */}
       {transform.scale !== 1 && (
-        <div className="absolute bottom-2 right-2 text-xs text-[#64748b] bg-white/80 px-2 py-0.5 rounded border border-border">
+        <div className="absolute bottom-2 right-2 text-xs text-muted bg-bg/80 px-2 py-0.5 rounded border border-border">
           {Math.round(transform.scale * 100)}%
         </div>
       )}

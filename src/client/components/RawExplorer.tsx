@@ -70,7 +70,7 @@ export function RawExplorer() {
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
+            className="border border-border rounded-lg px-3 py-1.5 text-sm bg-surface"
           >
             <option value="">All types</option>
             <option value="assistant">Assistant</option>
@@ -81,7 +81,7 @@ export function RawExplorer() {
           <select
             value={modelFilter}
             onChange={(e) => setModelFilter(e.target.value)}
-            className="border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
+            className="border border-border rounded-lg px-3 py-1.5 text-sm bg-surface"
           >
             <option value="">All models</option>
             <option value="claude-opus-4-6">Opus</option>

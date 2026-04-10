@@ -40,7 +40,7 @@ export function ToastContainer() {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="pointer-events-auto flex items-center gap-3 bg-white border border-border rounded-xl shadow-lg px-4 py-3 cursor-pointer hover:border-primary transition-all animate-slide-in-right max-w-sm"
+          className="pointer-events-auto flex items-center gap-3 bg-surface border border-border rounded-xl shadow-lg px-4 py-3 cursor-pointer hover:border-primary transition-all animate-slide-in-right max-w-sm"
           onClick={() => { navigate(`/sessions/${toast.sessionId}`); dismiss(toast.id); }}
           role="button"
         >

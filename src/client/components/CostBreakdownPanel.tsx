@@ -40,7 +40,7 @@ export function CostBreakdownPanel({
   const totalTokens = totalInputTokens + totalOutputTokens + totalCacheRead + totalCacheCreation;
 
   return (
-    <div className="border border-border rounded-xl bg-white p-4 mb-6">
+    <div className="border border-border rounded-xl bg-bg p-4 mb-6">
       {/* Top row: total cost + total tokens */}
       <div className="flex items-baseline gap-8 mb-3">
         <div>

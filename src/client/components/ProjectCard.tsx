@@ -52,7 +52,7 @@ export function ProjectCard({ project, onUpdated }: { project: Project; onUpdate
 
   if (editing) {
     return (
-      <div className="block border border-primary/40 rounded-xl p-5 bg-white shadow-md">
+      <div className="block border border-primary/40 rounded-xl p-5 bg-bg shadow-md">
         <div className="space-y-3 mb-4">
           <div>
             <label className="text-xs text-muted block mb-1">Name</label>
@@ -96,7 +96,7 @@ export function ProjectCard({ project, onUpdated }: { project: Project; onUpdate
     <div className="relative group">
       <Link
         to={`/projects/${encodeURIComponent(project.id)}`}
-        className="block border border-border rounded-xl p-5 hover:border-primary/40 hover:shadow-md transition-all duration-200 bg-white"
+        className="block border border-border rounded-xl p-5 hover:border-primary/40 hover:shadow-md transition-all duration-200 bg-bg"
       >
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-1.5 min-w-0">

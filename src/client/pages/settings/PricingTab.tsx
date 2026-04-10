@@ -160,7 +160,7 @@ export function PricingTab() {
                 </button>
                 <button
                   onClick={() => { setAdding(false); setErrors((prev) => { const n = { ...prev }; delete n["new-model-name"]; return n; }); }}
-                  className="bg-white text-muted border border-border px-3 py-1.5 rounded-lg text-sm hover:text-primary-dark"
+                  className="bg-bg text-muted border border-border px-3 py-1.5 rounded-lg text-sm hover:text-primary-dark"
                 >
                   Cancel
                 </button>
@@ -224,7 +224,7 @@ export function PricingTab() {
         <div className="flex gap-2 shrink-0 ml-3">
           <button
             onClick={reset}
-            className="bg-white text-muted border border-border px-4 py-1.5 rounded-lg text-sm hover:text-primary-dark hover:border-primary-dark"
+            className="bg-bg text-muted border border-border px-4 py-1.5 rounded-lg text-sm hover:text-primary-dark hover:border-primary-dark"
           >
             Reset to Defaults
           </button>

@@ -19,6 +19,22 @@ body {
   color: var(--color-primary-dark);
 }
 
+html.dark {
+  --color-bg: #141414;
+  --color-surface: #1f1f1f;
+  --color-border: #2d2d2d;
+  --color-muted: #8b8fa8;
+  --color-primary-dark: #e2e8f0;
+}
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: var(--color-surface);
+  color: var(--color-primary-dark);
+  color-scheme: dark;
+}
+
 @keyframes slideIn {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }

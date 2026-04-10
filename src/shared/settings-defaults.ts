@@ -126,6 +126,11 @@ export const SETTINGS_REGISTRY: Record<string, SettingDefinition> = {
     type: "number", defaultValue: 100, min: 50, max: 2000,
     tooltip: "How often to check whether a file has finished writing (ms). Used during the stability wait period.",
   },
+  "display.darkMode": {
+    type: "boolean",
+    defaultValue: false,
+    tooltip: "Enable dark mode. Also toggleable from the sidebar.",
+  },
   "display.maxLoadedEvents": {
     type: "number", defaultValue: 2000, min: 50, max: 50000,
     tooltip: "Maximum events held in memory while scrolling. When this limit is exceeded, the oldest events are trimmed from the buffer to free memory. Higher values let you scroll further without reloading, but use more browser memory.",

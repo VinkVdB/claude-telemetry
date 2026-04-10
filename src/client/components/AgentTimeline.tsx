@@ -231,7 +231,7 @@ export function AgentTimeline({
               key={s.chainKey ?? "__main__"}
               onClick={() => toggleAgent(s.chainKey)}
               className={cn(
-                "border rounded-xl bg-white p-3 flex flex-col gap-1 cursor-pointer transition-all select-none",
+                "border rounded-xl bg-bg p-3 flex flex-col gap-1 cursor-pointer transition-all select-none",
                 active ? "border-primary/40 shadow-sm" : "border-border opacity-50",
                 "hover:shadow-md"
               )}
@@ -279,7 +279,7 @@ export function AgentTimeline({
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Filter events by tool, content, agent..."
-              className="w-full border border-border rounded-lg px-3 py-1.5 text-sm bg-white"
+              className="w-full border border-border rounded-lg px-3 py-1.5 text-sm bg-surface"
             />
           </div>
           <EventTable

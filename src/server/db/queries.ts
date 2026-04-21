@@ -2,6 +2,14 @@
 import type { Database } from "bun:sqlite";
 import { getModelPricing } from "../../shared/pricing";
 
+function sanitizeFtsQuery(input: string): string {
+  return input
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(token => `"${token.replace(/"/g, '""')}"`)
+    .join(" ");
+}
+
 // --- Upserts for ingestion ---
 
 export function upsertProject(db: Database, id: string, name: string, path: string): void {
@@ -326,7 +334,7 @@ export function listEvents(
     ? "FROM events e JOIN events_fts fts ON e.rowid = fts.rowid"
     : "FROM events e";
   const ftsCondition = useFts ? ["events_fts MATCH ?"] : [];
-  const ftsParams    = useFts ? [filters.search] : [];
+  const ftsParams    = useFts ? [sanitizeFtsQuery(filters.search!)] : [];
 
   const allConditions = [...ftsCondition, ...conditions];
   const where = allConditions.length > 0 ? `WHERE ${allConditions.join(" AND ")}` : "";
@@ -390,7 +398,7 @@ export function getEventOffsetBySeq(
   const useFts = !!filters.search;
   const fromClause = useFts ? "FROM events e JOIN events_fts fts ON e.rowid = fts.rowid" : "FROM events e";
   const ftsCondition = useFts ? ["events_fts MATCH ?"] : [];
-  const ftsParams    = useFts ? [filters.search] : [];
+  const ftsParams    = useFts ? [sanitizeFtsQuery(filters.search!)] : [];
 
   const allConditions = [...ftsCondition, ...conditions];
   const where = allConditions.length > 0 ? `WHERE ${allConditions.join(" AND ")}` : "";

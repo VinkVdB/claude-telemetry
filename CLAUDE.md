@@ -77,6 +77,22 @@ Follow `docs/superpowers/plans/2026-03-18-claude-telemetry-dashboard.md` — 20 
 | `CT_OTEL_ENABLED` | `false` | Enable OTEL HTTP receiver |
 | `CLAUDE_HOME` | `~/.claude` | Host path for Docker volume mounts |
 
+## Deployment
+
+The dashboard runs as a **single Docker container** (`docker-compose.yml`), served on host port **4242** (→ container `3000`).
+
+```bash
+docker compose up -d --build   # apply code changes: rebuild image + recreate container
+docker compose logs -f claude-telemetry   # tail server logs (ingestion, pricing migrations)
+docker compose ps              # check container status
+curl -s http://localhost:4242/api/projects   # verify API / inspect live data
+```
+
+- **Live database** lives in the named volume `telemetry-db` at `/data/db/telemetry.db` **inside the container** — it persists across rebuilds. The `./telemetry.db` on the host is stale `bun scripts/seed.ts` output, **not** the running instance's DB.
+- **Project logs** are mounted **read-only** from `${CLAUDE_HOME}/projects` → `/data/projects`. The container watches them and ingests incrementally; source JSONL is never modified.
+- **Applying code changes requires `--build`** — a plain `up -d`/`restart` reuses the old image. After rebuild, startup migrations in `schema.ts` and `pricing-migration.ts` run once against the volume DB.
+- **Data caveat:** older projects' JSONL may no longer exist on disk — their history survives only in the volume DB. Do **not** wipe/re-seed the DB to "refresh"; recompute in place from stored data instead.
+
 ## Agent Strategy
 
 - Use agent teams liberally by using the `TeamCreate` tool

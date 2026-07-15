@@ -8,6 +8,7 @@ import { getDb } from "./db/connection";
 import { startWatcher } from "./ingestion/watcher";
 import { getSetting } from "./db/settings";
 import { loadPricingFromSettings } from "./db/pricing-loader";
+import { recomputePricingIfChanged } from "./db/pricing-migration";
 import { createApiRoutes } from "./api/projects";
 import { createSessionRoutes } from "./api/sessions";
 import { createEventRoutes } from "./api/events";
@@ -21,6 +22,10 @@ const db = getDb(`${config.dataDir}/db/telemetry.db`);
 
 // Load custom pricing from settings DB
 loadPricingFromSettings(db);
+
+// Recompute stored cost aggregates if the pricing table changed since last run
+// (e.g. a new model was added). No-op when pricing is unchanged.
+recomputePricingIfChanged(db);
 
 // Load server settings from DB (env vars take precedence)
 const dbPollInterval = getSetting(db, "server.pollInterval");

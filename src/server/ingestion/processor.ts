@@ -1,7 +1,7 @@
 // src/server/ingestion/processor.ts
 import type { Database } from "bun:sqlite";
 import { parseJsonlLine, extractEventData } from "./parser";
-import { calculateCost } from "./pricing";
+import { calculateCost, warnIfUnpriced } from "./pricing";
 import { upsertProject, upsertSession, insertEvent, updateSessionAggregates, upsertAgent, updateSessionTitle } from "../db/queries";
 
 export function processJsonlLine(db: Database, rawLine: string, projectSlug: string, chainId?: string): { eventId: string; sessionId: string; type: string } | null {
@@ -12,6 +12,9 @@ export function processJsonlLine(db: Database, rawLine: string, projectSlug: str
   if (!parsed.sessionId) return null;
 
   const event = extractEventData(parsed);
+
+  // Surface models we can't price so a silent $0 never slips through (warns once per model).
+  warnIfUnpriced(event.model);
 
   // Normalize git worktree cwd to the parent project path so worktree sessions
   // are grouped under the same project as their parent repo.
